@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+logs/
+monitoring/__pycache__/
+monitoring/metrics.json
+.git
+.gitignore
+.vscode/

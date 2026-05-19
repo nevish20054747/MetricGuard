@@ -1,0 +1,63 @@
+# ==========================================================
+# MetricGuard - Monitoring Service Dockerfile
+# ==========================================================
+#
+# Purpose:
+#   Containerizes the metric collector so it can run
+#   independently in any environment (local, cloud, CI/CD).
+#
+# How to build:
+#   docker build -f docker/Dockerfile.monitoring -t metricguard-monitor .
+#
+# How to run standalone:
+#   docker run --name monitor metricguard-monitor
+#
+# Note:
+#   Normally you use docker-compose (see docker-compose.yml)
+#   which starts this along with the backend and MongoDB.
+# ==========================================================
+
+# --- Stage 1: Use a lightweight Python base image ---
+FROM python:3.11-slim
+
+# Set metadata labels
+LABEL maintainer="MetricGuard DevOps Team"
+LABEL description="MetricGuard Monitoring Metric Collector"
+LABEL version="1.0"
+
+# --- Environment variables ---
+# Prevent Python from writing .pyc files and enable unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Default configuration (can be overridden in docker-compose.yml)
+ENV BACKEND_URL=http://backend:5000/metrics
+ENV COLLECTION_INTERVAL=5
+ENV MAX_RETRIES=3
+ENV RETRY_DELAY=2
+ENV LOG_FILE=/app/logs/system.log
+ENV LOG_LEVEL=INFO
+ENV DISK_PATH=/
+
+# --- Set up working directory ---
+WORKDIR /app
+
+# --- Install dependencies first (for Docker layer caching) ---
+# Copy only requirements.txt first so that dependency installation
+# is cached unless requirements.txt changes.
+COPY monitoring/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Copy the monitoring source code ---
+COPY monitoring/ .
+
+# --- Create the logs directory ---
+RUN mkdir -p logs && touch logs/system.log
+
+# --- Health check ---
+# Verifies that the Python process is still running
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import psutil; psutil.cpu_percent()" || exit 1
+
+# --- Run the metric collector ---
+CMD ["python", "metric_collector.py"]
