@@ -1,0 +1,116 @@
+# ==========================================================
+# MetricGuard - Docker Compose Configuration
+# ==========================================================
+#
+# Purpose:
+#   Orchestrates all MetricGuard services:
+#   1. monitoring  — collects and sends system metrics
+#   2. backend     — receives metrics and serves API
+#   3. mongodb     — stores metrics data
+#
+# How to run:
+#   cd devops/
+#   docker-compose -f docker/docker-compose.yml up --build
+#
+# How to stop:
+#   docker-compose -f docker/docker-compose.yml down
+#
+# How to view logs:
+#   docker-compose -f docker/docker-compose.yml logs -f monitoring
+# ==========================================================
+
+version: "3.8"
+
+services:
+
+  # ======================================================
+  # MongoDB Database
+  # ======================================================
+  # Stores all collected system metrics.
+  # Other team members' backend reads/writes from here.
+  mongodb:
+    image: mongo:7.0
+    container_name: metricguard-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: metricguard
+      MONGO_INITDB_ROOT_PASSWORD: metricguard123
+      MONGO_INITDB_DATABASE: metricguard_db
+    volumes:
+      # Persist data across container restarts
+      - mongo_data:/data/db
+    networks:
+      - metricguard-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ======================================================
+  # Backend API Service
+  # ======================================================
+  # Receives metrics from the monitoring collector.
+  # NOTE: This is a placeholder — the actual backend is
+  # built by another team member. Replace the image and
+  # build context with the real backend when available.
+  backend:
+    image: metricguard-backend:latest
+    container_name: metricguard-backend
+    restart: on-failure
+    ports:
+      - "5000:5000"
+    environment:
+      MONGO_URI: mongodb://metricguard:metricguard123@mongodb:27017/metricguard_db?authSource=admin
+      PORT: 5000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - metricguard-network
+
+  # ======================================================
+  # Monitoring Collector Service (THIS MODULE)
+  # ======================================================
+  # Collects system metrics and POSTs them to the backend.
+  monitoring:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.monitoring
+    container_name: metricguard-monitoring
+    restart: always
+    environment:
+      # Point to the backend service by Docker DNS name
+      BACKEND_URL: http://backend:5000/metrics
+      COLLECTION_INTERVAL: 5
+      MAX_RETRIES: 3
+      RETRY_DELAY: 2
+      LOG_LEVEL: INFO
+      DISK_PATH: /
+    depends_on:
+      - backend
+    volumes:
+      # Persist logs on the host machine
+      - ../logs:/app/logs
+    networks:
+      - metricguard-network
+
+# ======================================================
+# Shared Network
+# ======================================================
+# All services communicate over this internal network.
+# Docker DNS lets services reach each other by name
+# (e.g., "backend", "mongodb").
+networks:
+  metricguard-network:
+    driver: bridge
+    name: metricguard-network
+
+# ======================================================
+# Persistent Volumes
+# ======================================================
+volumes:
+  mongo_data:
+    driver: local

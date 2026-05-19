@@ -1,0 +1,67 @@
+[
+    {
+        "timestamp": "2026-05-16T22:24:03",
+        "cpu_usage": 19.6,
+        "ram_usage": 84.9,
+        "disk_usage": 27.7,
+        "disk_read_speed": "0.00 B",
+        "disk_write_speed": "4.00 KB",
+        "network_upload_speed": "0.00 B",
+        "network_download_speed": "0.00 B",
+        "process_count": 387,
+        "system_load": null,
+        "system_uptime": "11h 53m 14s"
+    },
+    {
+        "timestamp": "2026-05-16T22:24:11",
+        "cpu_usage": 14.9,
+        "ram_usage": 84.6,
+        "disk_usage": 27.7,
+        "disk_read_speed": "20.00 KB",
+        "disk_write_speed": "520.00 KB",
+        "network_upload_speed": "21.68 KB",
+        "network_download_speed": "25.21 KB",
+        "process_count": 387,
+        "system_load": null,
+        "system_uptime": "11h 53m 22s"
+    },
+    {
+        "timestamp": "2026-05-16T22:24:19",
+        "cpu_usage": 20.0,
+        "ram_usage": 84.3,
+        "disk_usage": 27.7,
+        "disk_read_speed": "384.00 KB",
+        "disk_write_speed": "584.00 KB",
+        "network_upload_speed": "7.59 KB",
+        "network_download_speed": "4.19 KB",
+        "process_count": 387,
+        "system_load": null,
+        "system_uptime": "11h 53m 30s"
+    },
+    {
+        "timestamp": "2026-05-16T22:24:27",
+        "cpu_usage": 15.2,
+        "ram_usage": 83.8,
+        "disk_usage": 27.7,
+        "disk_read_speed": "252.00 KB",
+        "disk_write_speed": "2.21 MB",
+        "network_upload_speed": "12.77 KB",
+        "network_download_speed": "18.86 KB",
+        "process_count": 382,
+        "system_load": null,
+        "system_uptime": "11h 53m 38s"
+    },
+    {
+        "timestamp": "2026-05-16T22:24:52",
+        "cpu_usage": 21.5,
+        "ram_usage": 83.5,
+        "disk_usage": 27.7,
+        "disk_read_speed": "456.00 KB",
+        "disk_write_speed": "13.59 MB",
+        "network_upload_speed": "38.74 KB",
+        "network_download_speed": "42.30 KB",
+        "process_count": 376,
+        "system_load": null,
+        "system_uptime": "11h 54m 2s"
+    }
+]
