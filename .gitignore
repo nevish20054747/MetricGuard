@@ -1,0 +1,20 @@
+models/
+.venv*
+.venv
+venv
+
+# Logs and transient metrics data
+*.log
+logs/
+**/logs/
+metrics.json
+**/metrics.json
+devops/logs/
+devops/monitoring/metrics.json
+
+# Python bytecode & caching
+__pycache__/
+*.pyc
+.pytest_cache/
+**/__pycache__/
+**/.pytest_cache/

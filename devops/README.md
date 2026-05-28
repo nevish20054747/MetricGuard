@@ -97,6 +97,7 @@ devops/
 │
 ├── testing/                       # Test scripts and guides
 │   ├── anomaly_test.py            # Stress tests & anomaly simulation
+│   ├── monitoring_test.py         # Monitoring verification test suite
 │   ├── integration_test.md        # Integration testing guide
 │   └── api_test.md                # API testing guide
 │
@@ -325,37 +326,108 @@ LOG_LEVEL=DEBUG
 
 ## Testing
 
+### Test Suites
+
+MetricGuard includes two test files:
+
+| File | Purpose |
+|------|---------|
+| `testing/anomaly_test.py` | Stress tests & anomaly simulation (CPU burn, RAM allocation, fake payloads) |
+| `testing/monitoring_test.py` | Verifies the monitoring pipeline is actively running and collecting data |
+
+---
+
 ### Run All Tests:
+
+```bash
+cd devops/
+python -m pytest testing/ -v
+```
+
+---
+
+### 1. Anomaly & Stress Tests (`anomaly_test.py`)
+
+These tests simulate abnormal system conditions to verify the metric collector handles extreme values correctly.
 
 ```bash
 cd devops/
 python -m pytest testing/anomaly_test.py -v
 ```
 
-### Run Specific Test Categories:
+#### Run specific categories:
 
 ```bash
-# CPU stress test
 python -m pytest testing/anomaly_test.py::TestCPUStress -v
-
-# RAM stress test
 python -m pytest testing/anomaly_test.py::TestRAMStress -v
-
-# Fake anomaly generation
 python -m pytest testing/anomaly_test.py::TestFakeAnomaly -v
-
-# Full collection test
 python -m pytest testing/anomaly_test.py::TestFullCollection -v
 ```
 
-### Test Categories:
-
-| Test Suite | Purpose |
+| Test Class | Purpose |
 |-----------|---------|
 | `TestCPUStress` | Burns CPU and verifies collector detects spike |
 | `TestRAMStress` | Allocates 200MB RAM and verifies detection |
 | `TestFakeAnomaly` | Creates synthetic extreme metric payloads |
 | `TestFullCollection` | Verifies all 10 metrics are collected |
+
+---
+
+### 2. Monitoring Verification Tests (`monitoring_test.py`)
+
+These tests verify that the entire monitoring pipeline is **actively running** and producing data. They check `metrics.json` freshness, backend health, anomaly log activity, system log updates, and live data growth.
+
+#### Prerequisites — Start Services First:
+
+The monitoring tests require the pipeline to be running. Open **3 separate terminals** and start services in order:
+
+**Terminal 1 — Backend API:**
+```bash
+cd devops/monitoring/
+python test_backend.py
+```
+
+**Terminal 2 — Metric Collector:**
+```bash
+cd devops/monitoring/
+python metric_collector.py
+```
+
+**Terminal 3 — Real-Time AI Detection:**
+```bash
+cd devops/monitoring/
+python realtime_ai_detection.py
+```
+
+Wait ~15 seconds for data to accumulate, then run the tests:
+
+**Terminal 4 — Run Tests:**
+```bash
+cd devops/
+python -m pytest testing/monitoring_test.py -v
+```
+
+#### Run specific categories:
+
+```bash
+python -m pytest testing/monitoring_test.py::TestMetricsFileHealth -v
+python -m pytest testing/monitoring_test.py::TestBackendHealth -v
+python -m pytest testing/monitoring_test.py::TestAnomalyLogging -v
+python -m pytest testing/monitoring_test.py::TestCollectorModule -v
+python -m pytest testing/monitoring_test.py::TestSystemLogActivity -v
+python -m pytest testing/monitoring_test.py::TestLiveMonitoringCycle -v
+```
+
+| Test Class | Purpose |
+|-----------|---------|
+| `TestMetricsFileHealth` | Checks `metrics.json` exists, is valid, has all keys, and is fresh |
+| `TestBackendHealth` | Verifies `/health` and `POST /metrics` endpoints respond correctly |
+| `TestAnomalyLogging` | Validates `anomaly_logs.csv` structure and data |
+| `TestCollectorModule` | Confirms metric collector module imports and returns valid data |
+| `TestSystemLogActivity` | Checks `system.log` exists and is recently modified |
+| `TestLiveMonitoringCycle` | Observes `metrics.json` for 10 seconds to confirm new entries arrive |
+
+> **Note:** Backend tests are automatically **skipped** (not failed) if the Flask server is not running. Freshness and live-cycle tests will **fail** if the metric collector is not running — this is the intended behavior to detect inactive monitoring.
 
 > 📖 For API testing, see [`testing/api_test.md`](testing/api_test.md)
 >
