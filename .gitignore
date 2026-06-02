@@ -18,3 +18,9 @@ __pycache__/
 .pytest_cache/
 **/__pycache__/
 **/.pytest_cache/
+
+# RCA transient data
+rca_logs.json
+**/rca_logs.json
+rca_backend_store.json
+**/rca_backend_store.json
