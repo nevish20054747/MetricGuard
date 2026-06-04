@@ -24,3 +24,6 @@ rca_logs.json
 **/rca_logs.json
 rca_backend_store.json
 **/rca_backend_store.json
+
+
+.env

@@ -352,22 +352,51 @@ def post_rca_to_backend(rca_event):
     """
     try:
         from config import Config
-        url = Config.BACKEND_URL.replace(
-            "/metrics", "/api/rca"
-        )
+        url = Config.BACKEND_URL.replace("/metrics", "/anomalies")
     except Exception:
-        url = "http://localhost:5000/api/rca"
+        url = "http://localhost:8000/anomalies"
+
+    # Calculate severity and detected_by as per Phase 5 spec
+    iso_alert = rca_event.get("isolation_forest_result") == -1
+    ae_alert = rca_event.get("reconstruction_error", 0.0) > AE_THRESHOLD
+    
+    severity = "CRITICAL" if (iso_alert and ae_alert) else "WARNING"
+    
+    detectors = []
+    if iso_alert:
+        detectors.append("Isolation Forest")
+    if ae_alert:
+        detectors.append("LSTM Autoencoder")
+    detected_by = " + ".join(detectors) if detectors else "Unknown"
+
+    # Parse and standardise timestamp
+    ts_str = rca_event.get("timestamp")
+    try:
+        # Standardise to ISO format if needed
+        ts_parsed = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        ts_formatted = ts_parsed.strftime("%Y-%m-%dT%H:%M:%S")
+    except Exception:
+        ts_formatted = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    anomaly_payload = {
+        "timestamp": ts_formatted,
+        "anomaly_score": rca_event.get("anomaly_score"),
+        "root_cause": rca_event.get("root_cause"),
+        "severity": severity,
+        "detected_by": detected_by,
+        "ml_model_version": "1.0.0"
+    }
 
     try:
         response = requests.post(
             url,
-            json=rca_event,
+            json=anomaly_payload,
             timeout=5,
             headers={"Content-Type": "application/json"},
         )
         if response.ok:
             print(
-                f"RCA posted to backend "
+                f"Anomaly posted to backend "
                 f"(status {response.status_code})"
             )
         else:
@@ -376,7 +405,7 @@ def post_rca_to_backend(rca_event):
                 f"{response.status_code}"
             )
     except Exception as e:
-        print(f"Could not post RCA to backend: {e}")
+        print(f"Could not post anomaly to backend: {e}")
 
 
 def get_rca_statistics():
@@ -431,39 +460,53 @@ def get_rca_statistics():
 # =========================================================
 
 def read_latest_metrics():
+    try:
+        from config import Config
+        url = Config.BACKEND_URL
+    except Exception:
+        url = "http://localhost:8000/metrics"
 
-    with open(METRICS_FILE, "r") as file:
+    try:
+        response = requests.get(f"{url}?limit=1", timeout=2)
+        if response.ok:
+            data = response.json()
+            if data and isinstance(data, list):
+                latest = data[0]
+                return {
+                    "cpu_usage": latest.get("cpu_usage", 0.0),
+                    "ram_usage": latest.get("memory_usage", 0.0),
+                    "disk_usage": 0.0,  # Not stored in DB
+                    "disk_read_speed": f"{latest.get('disk_read', 0.0)} KB",
+                    "disk_write_speed": f"{latest.get('disk_write', 0.0)} KB",
+                    "network_download_speed": f"{latest.get('network_rx', 0.0)} KB",
+                    "network_upload_speed": f"{latest.get('network_tx', 0.0)} KB",
+                    "process_count": 0,
+                    "system_load": 0.0,
+                    "system_uptime": "0h 0m 0s",
+                }
+    except Exception as e:
+        print(f"Failed to fetch metrics from DB endpoint, falling back to local file: {e}")
 
-        data = json.load(file)
-
-    latest = data[-1]
-
-    # Map the metric keys to match the schema generated
-    # by metric_collector.py
-    metrics = {
-        "cpu_usage": latest.get("cpu_usage", 0.0),
-        "ram_usage": latest.get("ram_usage", 0.0),
-        "disk_usage": latest.get("disk_usage", 0.0),
-        "disk_read_speed": latest.get(
-            "disk_read_speed", "0.00 B"
-        ),
-        "disk_write_speed": latest.get(
-            "disk_write_speed", "0.00 B"
-        ),
-        "network_upload_speed": latest.get(
-            "network_upload_speed", "0.00 B"
-        ),
-        "network_download_speed": latest.get(
-            "network_download_speed", "0.00 B"
-        ),
-        "process_count": latest.get("process_count", 0),
-        "system_load": latest.get("system_load", 0.0),
-        "system_uptime": latest.get(
-            "system_uptime", "0h 0m 0s"
-        ),
-    }
-
-    return metrics
+    # Fallback to local metrics.json
+    try:
+        with open(METRICS_FILE, "r") as file:
+            data = json.load(file)
+        latest = data[-1]
+        return {
+            "cpu_usage": latest.get("cpu_usage", 0.0),
+            "ram_usage": latest.get("ram_usage", 0.0),
+            "disk_usage": latest.get("disk_usage", 0.0),
+            "disk_read_speed": latest.get("disk_read_speed", "0.00 B"),
+            "disk_write_speed": latest.get("disk_write_speed", "0.00 B"),
+            "network_upload_speed": latest.get("network_upload_speed", "0.00 B"),
+            "network_download_speed": latest.get("network_download_speed", "0.00 B"),
+            "process_count": latest.get("process_count", 0),
+            "system_load": latest.get("system_load", 0.0),
+            "system_uptime": latest.get("system_uptime", "0h 0m 0s"),
+        }
+    except Exception as e:
+        print(f"Error reading local fallback file: {e}")
+        raise e
 
 # =========================================================
 # SAVE ANOMALY
