@@ -56,3 +56,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def verify_db_connection(db) -> bool:
+    """
+    Verify that the database connection is healthy by executing a simple query.
+    """
+    from sqlalchemy import text
+    try:
+        db.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False

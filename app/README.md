@@ -23,19 +23,24 @@ This system serves as the central orchestration and storage engine for MetricGua
 
 ```text
 MetricGuard/ (Project Root)
-├── .env                 # Database credentials and configuration
-├── test_relationship.py # Utility to verify database ORM relationships and cascade deletion
+├── .env                   # Database credentials and configuration
+├── alembic.ini            # Alembic migration configuration
+├── test_relationship.py   # Utility to verify database ORM relationships and cascade deletion
+├── test_integration.py    # Integration test suite (30 tests, run with pytest)
+├── alembic/
+│   ├── env.py             # Alembic environment config (loads .env, connects to TiDB)
+│   └── versions/          # Auto-generated migration scripts
 └── app/
-    ├── main.py          # FastAPI application config, lifespan events & routing mounts
-    ├── database.py      # TiDB Cloud engine setup with SSL configurations
-    ├── models.py        # SQLAlchemy database model entities (Metric & Anomaly tables)
-    ├── schemas.py       # Pydantic request & response verification objects
-    ├── crud.py          # Database operations (inserts, queries, and aggregations)
-    ├── ml_service.py    # Thread-safe ML service singleton (handles TF & scikit-learn models)
+    ├── main.py            # FastAPI application config, lifespan events & routing mounts
+    ├── database.py        # TiDB Cloud engine setup with SSL configurations
+    ├── models.py          # SQLAlchemy ORM models (Metric & Anomaly with audit fields)
+    ├── schemas.py         # Pydantic request & response schemas with input validation
+    ├── crud.py            # Database operations (inserts, queries, filtering, pagination)
+    ├── ml_service.py      # Thread-safe ML service singleton (handles TF & scikit-learn models)
     └── routers/
-        ├── metrics.py   # Ingests & queries system metrics
-        ├── anomalies.py # Stores & queries historical anomalies
-        └── ml.py        # Exposes on-demand ML predictions, RCA, and system status
+        ├── metrics.py     # Ingests & queries system metrics
+        ├── anomalies.py   # Stores & queries historical anomalies (with filtering & sorting)
+        └── ml.py          # Exposes on-demand ML predictions, RCA, and system status
 ```
 
 ---
@@ -56,7 +61,10 @@ Ensure you are in the project root directory and activate your virtual environme
 Install the backend web, database, and machine learning packages:
 ```powershell
 # Install FastAPI, ORM and Database Drivers
-pip install fastapi uvicorn sqlalchemy pymysql cryptography
+pip install fastapi uvicorn sqlalchemy pymysql cryptography python-dotenv
+
+# Install migration and testing tools
+pip install alembic httpx2 pytest
 
 # Install ML libraries (TensorFlow, scikit-learn, joblib, etc.)
 pip install -r devops/monitoring/requirements.txt
@@ -79,7 +87,21 @@ Launch Uvicorn in the terminal:
 ```powershell
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-*On startup, the system will automatically connect to TiDB Cloud, provision the database tables if they are missing, and load the pre-trained ML models from `devops/models/` into memory.*
+*On startup, the system will automatically verify database connectivity, provision the database tables if they are missing, and load the pre-trained ML models from `devops/models/` into memory.*
+
+### 4. Run Database Migrations (Alembic)
+
+Apply the latest schema migrations to synchronize TiDB with the ORM models:
+```powershell
+# Apply all pending migrations
+.venv\Scripts\alembic.exe upgrade head
+
+# Check current migration version
+.venv\Scripts\alembic.exe current
+
+# Generate a new migration after model changes
+.venv\Scripts\alembic.exe revision --autogenerate -m "description"
+```
 
 ---
 
@@ -103,9 +125,32 @@ python devops/monitoring/realtime_ai_detection.py
 
 ---
 
+## Testing
+
+### Integration Test Suite
+Run the full 30-test integration suite against the live database:
+```powershell
+.venv\Scripts\python.exe -m pytest test_integration.py -v
+```
+
+The suite covers: health check, metrics CRUD, anomalies CRUD, FK enforcement, one-to-many relationships, cascade delete, filtering/sorting/pagination, RCA stats, and input validation.
+
+### Relationship Linkage Tests
+Verify database ORM mappings, relationships, and cascade-deletion behavior:
+```powershell
+python test_relationship.py
+```
+
+---
+
 ## Testing Backend Endpoints Manually
 
-You can query the API server directly using native PowerShell command lets:
+You can query the API server directly using native PowerShell commandlets:
+
+### Health Check
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
+```
 
 ### Check ML Model Status & Buffer Fill Level
 ```powershell
@@ -137,25 +182,19 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/ml/predict" `
   }'
 ```
 
-### Get Anomalies (Including Parent Metric details)
-Query anomalies and eagerly load their parent metric snapshots:
+### Get Anomalies with Filtering, Sorting & Pagination
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?include_metric=true"
-```
+# Filter by severity, include parent metric, limit to 5 results
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?severity=critical&include_metric=true&limit=5"
 
-### Get Anomalies (Excluding Metric details)
-Retrieve basic anomaly details without the nested metric object payload:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?include_metric=false"
+# Sort by anomaly_score ascending, page 2
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?sort_by=anomaly_score&sort_order=asc&offset=10&limit=10"
+
+# Filter by detection method
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?detected_by=isolation_forest"
 ```
 
 ### Get Anomalies Generated from a Specific Metric (e.g., ID 2)
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/metrics/2/anomalies"
-```
-
-### Run Relationship Linkage Tests
-Verify database ORM mappings, relationships, and cascade-deletion behavior:
-```powershell
-python test_relationship.py
 ```

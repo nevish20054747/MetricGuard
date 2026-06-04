@@ -91,6 +91,8 @@ def insert_anomaly(db: Session, anomaly_in: AnomalyCreate) -> Anomaly:
     """
     Insert an anomaly result into the database.
     """
+    if anomaly_in.metric_id is None:
+        raise ValueError("metric_id is mandatory and cannot be None.")
     try:
         db_anomaly = Anomaly(
             timestamp=anomaly_in.timestamp,
@@ -173,5 +175,50 @@ def get_anomalies_by_metric(db: Session, metric_id: int) -> list[Anomaly]:
         return db.query(Anomaly).filter(Anomaly.metric_id == metric_id).order_by(desc(Anomaly.timestamp)).all()
     except Exception as e:
         logger.error("Failed to query anomalies by metric ID %d: %s", metric_id, e, exc_info=True)
+        raise e
+
+
+def get_anomalies_filtered(
+    db: Session,
+    limit: int = 100,
+    offset: int = 0,
+    sort_by: str = "timestamp",
+    sort_order: str = "desc",
+    severity: str = None,
+    root_cause: str = None,
+    detected_by: str = None,
+    include_metric: bool = False
+) -> list[Anomaly]:
+    """
+    Retrieve anomalies with filtering, sorting, pagination, and optional parent metrics pre-loaded.
+    """
+    try:
+        from sqlalchemy import desc, asc
+        query = db.query(Anomaly)
+        
+        # Filtering
+        if severity:
+            query = query.filter(Anomaly.severity == severity)
+        if root_cause:
+            query = query.filter(Anomaly.root_cause == root_cause)
+        if detected_by:
+            query = query.filter(Anomaly.detected_by == detected_by)
+            
+        # Sorting
+        sort_attr = getattr(Anomaly, sort_by, Anomaly.timestamp)
+        if sort_order == "desc":
+            query = query.order_by(desc(sort_attr))
+        else:
+            query = query.order_by(asc(sort_attr))
+            
+        # Eager loading
+        if include_metric:
+            from sqlalchemy.orm import joinedload
+            query = query.options(joinedload(Anomaly.metric))
+            
+        # Pagination
+        return query.offset(offset).limit(limit).all()
+    except Exception as e:
+        logger.error("Failed to query filtered anomalies: %s", e, exc_info=True)
         raise e
 

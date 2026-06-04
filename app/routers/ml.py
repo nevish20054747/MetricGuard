@@ -9,8 +9,9 @@ from app.schemas import (
     MLPredictionResponse,
     RCAStatsResponse,
     AnomalyCreate,
+    MetricCreate,
 )
-from app.crud import insert_anomaly, get_anomaly_stats
+from app.crud import insert_anomaly, get_anomaly_stats, insert_metric, parse_speed_string
 from app.ml_service import get_ml_service, MLService
 
 logger = logging.getLogger("metricguard.routers.ml")
@@ -44,6 +45,18 @@ def predict_metrics(
 
         # If anomaly detected, store in database
         if result.is_anomaly:
+            # Build the cleaned MetricCreate object and insert it first to generate a valid metric_id
+            metric_in = MetricCreate(
+                timestamp=ts,
+                cpu_usage=payload.cpu_usage,
+                memory_usage=payload.ram_usage,
+                disk_read=parse_speed_string(payload.disk_read_speed),
+                disk_write=parse_speed_string(payload.disk_write_speed),
+                network_rx=parse_speed_string(payload.network_download_speed),
+                network_tx=parse_speed_string(payload.network_upload_speed),
+            )
+            db_metric = insert_metric(db, metric_in)
+
             # Score can be ae_mse or iso_score
             score = result.ae_mse if result.ae_anomaly else result.iso_score
             anomaly_in = AnomalyCreate(
@@ -53,7 +66,7 @@ def predict_metrics(
                 severity=result.severity,
                 detected_by=result.detected_by,
                 ml_model_version="1.0.0",
-                metric_id=None,
+                metric_id=db_metric.id,
             )
             insert_anomaly(db, anomaly_in)
 

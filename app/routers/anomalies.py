@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas import AnomalyCreate, AnomalyResponse
-from app.crud import insert_anomaly, get_anomalies
+from app.crud import insert_anomaly, get_anomalies_filtered
 
 logger = logging.getLogger("metricguard.routers.anomalies")
 
@@ -31,14 +31,30 @@ def create_anomaly(payload: AnomalyCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[AnomalyResponse])
 def read_anomalies(
     limit: int = Query(default=100, ge=1, le=1000, description="Number of records to retrieve"),
+    offset: int = Query(default=0, ge=0, description="Number of records to skip"),
+    sort_by: str = Query(default="timestamp", description="Column to sort by (timestamp, anomaly_score, severity)"),
+    sort_order: str = Query(default="desc", description="Sort order (asc, desc)"),
+    severity: str = Query(default=None, description="Filter by severity"),
+    root_cause: str = Query(default=None, description="Filter by root cause"),
+    detected_by: str = Query(default=None, description="Filter by detection method"),
     include_metric: bool = Query(default=False, description="Whether to include associated metric details"),
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve anomaly history from TiDB, ordered by timestamp descending.
+    Retrieve anomaly history from TiDB with filtering, sorting, and pagination.
     """
     try:
-        anomalies = get_anomalies(db, limit=limit, include_metric=include_metric)
+        anomalies = get_anomalies_filtered(
+            db,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            severity=severity,
+            root_cause=root_cause,
+            detected_by=detected_by,
+            include_metric=include_metric
+        )
         
         # If include_metric is False, explicitly prevent lazy-loading nested metric object during Pydantic serialization
         if not include_metric:

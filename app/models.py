@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, CheckConstraint, func
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -17,6 +17,10 @@ class Metric(Base):
     network_rx = Column(Float, nullable=True)
     network_tx = Column(Float, nullable=True)
 
+    # Audit fields
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
     # Establish one-to-many relationship with Anomaly
     anomalies = relationship("Anomaly", back_populates="metric", cascade="all, delete-orphan")
 
@@ -34,13 +38,26 @@ class Anomaly(Base):
     timestamp = Column(DateTime, nullable=False, index=True)
     anomaly_score = Column(Float, nullable=False)
     root_cause = Column(String(255), nullable=True)
-    severity = Column(String(50), nullable=False)
+    severity = Column(String(50), nullable=False, index=True)
     detected_by = Column(String(100), nullable=False)
     ml_model_version = Column(String(50), nullable=True)
     
-    # Establish foreign key relationship to Metric
-    metric_id = Column(Integer, ForeignKey("metrics.id"), nullable=True)
+    # Establish foreign key relationship to Metric (mandatory with index)
+    metric_id = Column(Integer, ForeignKey("metrics.id"), nullable=False, index=True)
     metric = relationship("Metric", back_populates="anomalies")
+
+    # Audit fields
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Database constraints
+    __table_args__ = (
+        CheckConstraint("anomaly_score >= 0.0", name="chk_anomaly_score_positive"),
+        CheckConstraint(
+            "severity IN ('low', 'warning', 'critical', 'LOW', 'WARNING', 'CRITICAL')",
+            name="chk_severity_valid"
+        ),
+    )
 
     def __repr__(self):
         return f"<Anomaly(id={self.id}, timestamp={self.timestamp}, root_cause='{self.root_cause}', severity='{self.severity}', ml_model_version='{self.ml_model_version}', metric_id={self.metric_id})>"

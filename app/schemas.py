@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
 from typing import Optional
 
@@ -38,6 +38,8 @@ class MetricCollectorInput(BaseModel):
 
 class MetricResponse(MetricBase):
     id: int
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,14 +55,31 @@ class AnomalyBase(BaseModel):
     severity: str
     detected_by: str
     ml_model_version: Optional[str] = None
-    metric_id: Optional[int] = None
+    metric_id: int
 
 class AnomalyCreate(AnomalyBase):
-    pass
+    """Input schema with strict validation rules."""
+
+    @field_validator("anomaly_score")
+    @classmethod
+    def score_must_be_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("anomaly_score must be >= 0")
+        return v
+
+    @field_validator("severity")
+    @classmethod
+    def severity_must_be_valid(cls, v: str) -> str:
+        allowed = {"low", "warning", "critical"}
+        if v.lower() not in allowed:
+            raise ValueError(f"severity must be one of {allowed}, got '{v}'")
+        return v
 
 class AnomalyResponse(AnomalyBase):
     id: int
     metric: Optional[MetricResponse] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

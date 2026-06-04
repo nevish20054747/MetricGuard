@@ -1,9 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from datetime import datetime
 
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal, get_db, verify_db_connection
 from app.routers import metrics, anomalies, ml
 from app.ml_service import get_ml_service
 
@@ -27,10 +29,23 @@ logger = logging.getLogger("metricguard")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    On startup: create database tables if they do not exist, and load ML models.
+    On startup: verify database connection, create tables, and load ML models.
     On shutdown: dispose engine connections.
     """
     logger.info("MetricGuard backend starting up...")
+    
+    # Verify database connection on startup
+    logger.info("Verifying database connection...")
+    db = SessionLocal()
+    is_connected = verify_db_connection(db)
+    db.close()
+    
+    if not is_connected:
+        logger.critical("Database connection verification FAILED. Database is unavailable.")
+        raise SystemExit("Database connection failed. Application startup aborted.")
+    
+    logger.info("Database connection verified successfully.")
+    
     logger.info("Creating database tables if they do not exist...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables ready.")
@@ -88,8 +103,16 @@ app.include_router(ml.router)
 # =========================================================
 
 @app.get("/health", tags=["Health"])
-def health_check():
+def health_check(db: Session = Depends(get_db)):
     """
-    Simple health check endpoint for backend visibility.
+    Exposes detailed status of API service health and database connectivity.
     """
-    return {"status": "healthy", "service": "MetricGuard API"}
+    db_healthy = verify_db_connection(db)
+    db_status = "healthy" if db_healthy else "unhealthy"
+    
+    return {
+        "status": "healthy" if db_healthy else "degraded",
+        "api": "healthy",
+        "database": db_status,
+        "timestamp": datetime.now().isoformat()
+    }
