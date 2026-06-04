@@ -53,12 +53,14 @@ class AnomalyBase(BaseModel):
     severity: str
     detected_by: str
     ml_model_version: Optional[str] = None
+    metric_id: Optional[int] = None
 
 class AnomalyCreate(AnomalyBase):
     pass
 
 class AnomalyResponse(AnomalyBase):
     id: int
+    metric: Optional[MetricResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 

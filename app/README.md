@@ -10,28 +10,32 @@ This system serves as the central orchestration and storage engine for MetricGua
 
 1. **Metrics Ingestion & Storage**: Accepts raw metrics (CPU, RAM, disk throughput, network bandwidth) collected from system endpoints. It automatically parses formatted throughput speed strings (e.g. `"4.39 MB"`, `"200 KB"`) into clean numerical values and persists them to the `metrics` table in TiDB.
 2. **On-Ingest Real-Time Anomaly Detection**: Every time a metric is posted to the backend, the integrated ML pipeline optionally scores the incoming metric in real-time. If it qualifies as an anomaly, an entry is instantly generated and stored in the `anomalies` table.
-3. **Dual-Model ML Pipeline**:
+3. **Traceability Linkage**: Maintains a proper one-to-many relationship (`Metric.anomalies` / `Anomaly.metric_id` -> `Metric.id`) between stored metrics and anomalies, allowing full drill-down analysis from anomalies back to the exact system metric snapshots that triggered them.
+4. **Dual-Model ML Pipeline**:
    - **Isolation Forest**: Inspects instant, point-in-time anomalies (e.g., sudden massive CPU spikes, high memory utilization, or unusually slow backend response times).
    - **Multivariate Autoencoder**: Reconstructs time-series sequences (groups of 30 historical steps) to find anomalies in temporal trends and behaviors.
-4. **Root Cause Analysis (RCA)**: When the Autoencoder triggers a trend anomaly, it calculates feature-wise reconstruction errors to pinpoint which resource category (CPU, Memory, Disk, or Network) is the primary contributor to the failure.
-5. **REST API & Statistics**: Exposes structured API endpoints for fetching metrics history, anomaly logs, aggregate root cause stats (for frontend charts), and the current model queue/buffer levels.
+5. **Root Cause Analysis (RCA)**: When the Autoencoder triggers a trend anomaly, it calculates feature-wise reconstruction errors to pinpoint which resource category (CPU, Memory, Disk, or Network) is the primary contributor to the failure.
+6. **REST API & Statistics**: Exposes structured API endpoints for fetching metrics history, anomaly logs, aggregate root cause stats (for frontend charts), and the current model queue/buffer levels.
 
 ---
 
 ## Directory Structure
 
 ```text
-app/
-├── main.py          # FastAPI application config, lifespan events & routing mounts
-├── database.py      # TiDB Cloud engine setup with SSL configurations
-├── models.py        # SQLAlchemy database model entities (Metric & Anomaly tables)
-├── schemas.py       # Pydantic request & response verification objects
-├── crud.py          # Database operations (inserts, queries, and aggregations)
-├── ml_service.py    # Thread-safe ML service singleton (handles TF & scikit-learn models)
-└── routers/
-    ├── metrics.py   # Ingests & queries system metrics
-    ├── anomalies.py # Stores & queries historical anomalies
-    └── ml.py        # Exposes on-demand ML predictions, RCA, and system status
+MetricGuard/ (Project Root)
+├── .env                 # Database credentials and configuration
+├── test_relationship.py # Utility to verify database ORM relationships and cascade deletion
+└── app/
+    ├── main.py          # FastAPI application config, lifespan events & routing mounts
+    ├── database.py      # TiDB Cloud engine setup with SSL configurations
+    ├── models.py        # SQLAlchemy database model entities (Metric & Anomaly tables)
+    ├── schemas.py       # Pydantic request & response verification objects
+    ├── crud.py          # Database operations (inserts, queries, and aggregations)
+    ├── ml_service.py    # Thread-safe ML service singleton (handles TF & scikit-learn models)
+    └── routers/
+        ├── metrics.py   # Ingests & queries system metrics
+        ├── anomalies.py # Stores & queries historical anomalies
+        └── ml.py        # Exposes on-demand ML predictions, RCA, and system status
 ```
 
 ---
@@ -131,4 +135,27 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/ml/predict" `
     "system_load": 8.5,
     "system_uptime": "10h"
   }'
+```
+
+### Get Anomalies (Including Parent Metric details)
+Query anomalies and eagerly load their parent metric snapshots:
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?include_metric=true"
+```
+
+### Get Anomalies (Excluding Metric details)
+Retrieve basic anomaly details without the nested metric object payload:
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/anomalies/?include_metric=false"
+```
+
+### Get Anomalies Generated from a Specific Metric (e.g., ID 2)
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/metrics/2/anomalies"
+```
+
+### Run Relationship Linkage Tests
+Verify database ORM mappings, relationships, and cascade-deletion behavior:
+```powershell
+python test_relationship.py
 ```

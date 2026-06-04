@@ -31,13 +31,20 @@ def create_anomaly(payload: AnomalyCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[AnomalyResponse])
 def read_anomalies(
     limit: int = Query(default=100, ge=1, le=1000, description="Number of records to retrieve"),
+    include_metric: bool = Query(default=False, description="Whether to include associated metric details"),
     db: Session = Depends(get_db),
 ):
     """
     Retrieve anomaly history from TiDB, ordered by timestamp descending.
     """
     try:
-        anomalies = get_anomalies(db, limit=limit)
+        anomalies = get_anomalies(db, limit=limit, include_metric=include_metric)
+        
+        # If include_metric is False, explicitly prevent lazy-loading nested metric object during Pydantic serialization
+        if not include_metric:
+            for a in anomalies:
+                a.__dict__['metric'] = None
+                
         return anomalies
     except Exception as e:
         logger.error("Failed to retrieve anomalies: %s", e, exc_info=True)

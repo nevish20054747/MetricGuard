@@ -53,6 +53,7 @@ def predict_metrics(
                 severity=result.severity,
                 detected_by=result.detected_by,
                 ml_model_version="1.0.0",
+                metric_id=None,
             )
             insert_anomaly(db, anomaly_in)
 

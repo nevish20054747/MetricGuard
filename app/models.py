@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 class Metric(Base):
@@ -15,6 +16,9 @@ class Metric(Base):
     disk_write = Column(Float, nullable=True)
     network_rx = Column(Float, nullable=True)
     network_tx = Column(Float, nullable=True)
+
+    # Establish one-to-many relationship with Anomaly
+    anomalies = relationship("Anomaly", back_populates="metric", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Metric(id={self.id}, timestamp={self.timestamp}, cpu_usage={self.cpu_usage}%)>"
@@ -33,6 +37,10 @@ class Anomaly(Base):
     severity = Column(String(50), nullable=False)
     detected_by = Column(String(100), nullable=False)
     ml_model_version = Column(String(50), nullable=True)
+    
+    # Establish foreign key relationship to Metric
+    metric_id = Column(Integer, ForeignKey("metrics.id"), nullable=True)
+    metric = relationship("Metric", back_populates="anomalies")
 
     def __repr__(self):
-        return f"<Anomaly(id={self.id}, timestamp={self.timestamp}, root_cause='{self.root_cause}', severity='{self.severity}', ml_model_version='{self.ml_model_version}')>"
+        return f"<Anomaly(id={self.id}, timestamp={self.timestamp}, root_cause='{self.root_cause}', severity='{self.severity}', ml_model_version='{self.ml_model_version}', metric_id={self.metric_id})>"

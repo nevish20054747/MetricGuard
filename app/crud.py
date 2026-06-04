@@ -99,6 +99,7 @@ def insert_anomaly(db: Session, anomaly_in: AnomalyCreate) -> Anomaly:
             severity=anomaly_in.severity,
             detected_by=anomaly_in.detected_by,
             ml_model_version=anomaly_in.ml_model_version,
+            metric_id=anomaly_in.metric_id,
         )
         db.add(db_anomaly)
         db.commit()
@@ -111,12 +112,17 @@ def insert_anomaly(db: Session, anomaly_in: AnomalyCreate) -> Anomaly:
         raise e
 
 
-def get_anomalies(db: Session, limit: int = 100) -> list[Anomaly]:
+def get_anomalies(db: Session, limit: int = 100, include_metric: bool = False) -> list[Anomaly]:
     """
     Retrieve anomaly history from the database, ordered by timestamp descending.
+    Optionally pre-load the associated metric details using joinedload.
     """
     try:
-        return db.query(Anomaly).order_by(desc(Anomaly.timestamp)).limit(limit).all()
+        query = db.query(Anomaly)
+        if include_metric:
+            from sqlalchemy.orm import joinedload
+            query = query.options(joinedload(Anomaly.metric))
+        return query.order_by(desc(Anomaly.timestamp)).limit(limit).all()
     except Exception as e:
         logger.error("Failed to query anomalies from database: %s", e, exc_info=True)
         raise e
@@ -156,5 +162,16 @@ def get_recent_anomalies_by_type(db: Session, detected_by: str, limit: int = 100
         return db.query(Anomaly).filter(Anomaly.detected_by.like(f"%{detected_by}%")).order_by(desc(Anomaly.timestamp)).limit(limit).all()
     except Exception as e:
         logger.error("Failed to query anomalies by type: %s", e, exc_info=True)
+        raise e
+
+
+def get_anomalies_by_metric(db: Session, metric_id: int) -> list[Anomaly]:
+    """
+    Retrieve all anomalies linked to a specific metric record.
+    """
+    try:
+        return db.query(Anomaly).filter(Anomaly.metric_id == metric_id).order_by(desc(Anomaly.timestamp)).all()
+    except Exception as e:
+        logger.error("Failed to query anomalies by metric ID %d: %s", metric_id, e, exc_info=True)
         raise e
 

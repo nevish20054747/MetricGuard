@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas import MetricCreate, MetricResponse, MetricCollectorInput, AnomalyCreate
-from app.crud import insert_metric, get_metrics, parse_speed_string, insert_anomaly
+from app.schemas import MetricCreate, MetricResponse, MetricCollectorInput, AnomalyCreate, AnomalyResponse
+from app.crud import insert_metric, get_metrics, parse_speed_string, insert_anomaly, get_anomalies_by_metric
 from app.ml_service import get_ml_service, MLService
 
 logger = logging.getLogger("metricguard.routers.metrics")
@@ -62,9 +62,10 @@ def create_metric(
                         severity=result.severity,
                         detected_by=result.detected_by,
                         ml_model_version="1.0.0",
+                        metric_id=db_metric.id,
                     )
                     insert_anomaly(db, anomaly_in)
-                    logger.info("Anomaly detected and recorded on ingest (root_cause: %s)", result.root_cause)
+                    logger.info("Anomaly detected and recorded on ingest (root_cause: %s, metric_id: %d)", result.root_cause, db_metric.id)
             except Exception as ml_err:
                 logger.error("Failed running ML pipeline on ingest: %s", ml_err, exc_info=True)
                 # We don't fail the request if ML pipeline has an error, to ensure ingestion robustness
@@ -90,3 +91,23 @@ def read_metrics(
     except Exception as e:
         logger.error("Failed to retrieve metrics: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+
+
+@router.get("/{metric_id}/anomalies", response_model=list[AnomalyResponse])
+def read_metric_anomalies(metric_id: int, db: Session = Depends(get_db)):
+    """
+    Retrieve all anomalies generated from a specific metric record.
+    """
+    try:
+        from app.models import Metric
+        metric_exists = db.query(Metric).filter(Metric.id == metric_id).first()
+        if not metric_exists:
+            raise HTTPException(status_code=404, detail=f"Metric record with ID {metric_id} not found.")
+
+        anomalies = get_anomalies_by_metric(db, metric_id=metric_id)
+        return anomalies
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to retrieve anomalies for metric ID %d: %s", metric_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve anomalies for metric: {str(e)}")
