@@ -1,7 +1,7 @@
 """
 MetricGuard API Endpoint Test Script
 
-Run the FastAPI server first:
+Run the Backend API service first:
     python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Then in a separate terminal run:
@@ -54,7 +54,18 @@ def test_get_metrics():
     print(f"   -> Retrieved {len(data)} metric records.")
     if data:
         latest = data[0]
-        print(f"   -> Latest: ID={latest['id']}, CPU={latest['cpu_usage']}%, Memory={latest['memory_usage']}%")
+
+        memory_value = latest.get(
+            "ram_usage",
+            latest.get("memory_usage", "N/A")
+        )
+
+        print(
+            f"   -> Latest: "
+            f"ID={latest['id']}, "
+            f"CPU={latest['cpu_usage']}%, "
+            f"Memory={memory_value}%"
+        )
     return True
 
 
@@ -100,7 +111,7 @@ if __name__ == "__main__":
         print("\n🎉 All API endpoint tests PASSED!")
     except requests.ConnectionError:
         print("\n[ERROR] Cannot connect to the server.")
-        print("Make sure the FastAPI server is running:")
+        print("Make sure the Backend API server is running:")
         print("  python -m uvicorn app.main:app --host 127.0.0.1 --port 8000")
     except AssertionError as e:
         print(f"\n[ERROR] Test failed: {e}")

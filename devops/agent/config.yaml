@@ -1,0 +1,81 @@
+# ==============================================================
+# MetricGuard Agent - Configuration File
+# ==============================================================
+#
+# This file controls every aspect of the MetricGuard Agent.
+# Edit the values below and restart the agent for changes
+# to take effect.
+#
+# The agent reads this file once at startup via config.py.
+# If a key is missing, the agent uses a safe default value.
+# ==============================================================
+
+
+# ── Backend API ─────────────────────────────────────────────
+# URL where collected metrics are POSTed.
+# Change this when deploying to staging / production.
+backend_url: "http://backend:5000/metrics"
+
+
+# ── Collection ──────────────────────────────────────────────
+# How often (seconds) the agent collects and sends metrics.
+# Lower = more granularity, higher = less resource usage.
+collection_interval: 30
+
+
+# ── Agent Identity ──────────────────────────────────────────
+# A human-readable name for this machine / instance.
+# Sent with every payload so the backend can tell hosts apart.
+agent_name: "machine-01"
+
+
+# ── Retry / Resilience ──────────────────────────────────────
+# max_retries   : how many times to retry a failed POST
+# retry_delay   : base delay (seconds) between retries
+#                 actual delay doubles each attempt (exponential backoff)
+# request_timeout: seconds before an HTTP request is abandoned
+max_retries: 3
+retry_delay: 2
+request_timeout: 10
+
+
+# ── Logging ─────────────────────────────────────────────────
+# log_file : path to the persistent log (relative or absolute)
+# log_level: DEBUG | INFO | WARNING | ERROR | CRITICAL
+log_file: "logs/agent.log"
+log_level: "INFO"
+
+
+# ── Disk Monitoring ─────────────────────────────────────────
+# Path used by psutil.disk_usage().
+#   Linux / macOS : "/"
+#   Windows       : "C:\\"
+disk_path: "/"
+
+
+# ── Metric Toggles ─────────────────────────────────────────
+# Set any metric to false to stop collecting it.
+# Useful when a specific metric is irrelevant or expensive.
+enabled_metrics:
+  cpu: true
+  memory: true
+  disk: true
+  network: true
+  process_count: true
+  system_load: true
+  system_uptime: true
+
+
+# ── Log Collection (Phase 7) ───────────────────────────
+# List of log files the agent watches for new lines.
+# Each file is monitored via watchdog + pygtail.
+# Paths can be relative (to agent/) or absolute.
+log_watch_files:
+  - "watched_logs/application.log"
+  - "watched_logs/database.log"
+  - "watched_logs/server.log"
+
+# (Optional) Explicit URL for the logs endpoint.
+# If omitted, the agent derives it from backend_url:
+#   http://backend:5000/metrics  →  http://backend:5000/logs
+logs_backend_url: "http://backend:5000/logs"

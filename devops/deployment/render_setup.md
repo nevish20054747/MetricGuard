@@ -20,12 +20,12 @@
 │          │                               │
 │          ▼                               │
 │  ┌────────────────┐                      │
-│  │ MongoDB Atlas  │ (external)           │
+│  │ MySQL / TiDB   │ (external — TiDB Cloud) │
 │  └────────────────┘                      │
 └──────────────────────────────────────────┘
 ```
 
-> **Note**: Render does not offer a managed MongoDB service. Use MongoDB Atlas (see `mongodb_atlas.md`).
+> **Note**: Render does not offer a managed MySQL/TiDB database. Use TiDB Cloud (see `tidb_cloud_setup.md` for the setup guide).
 
 ---
 
@@ -33,8 +33,8 @@
 
 1. A [Render account](https://render.com) (free tier available)
 2. Project code pushed to GitHub or GitLab
-3. MongoDB Atlas cluster set up (see `mongodb_atlas.md`)
-4. MongoDB connection string ready
+3. TiDB Cloud cluster set up and connection credentials ready (see `tidb_cloud_setup.md`)
+4. TiDB Cloud connection details (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`) available
 
 ---
 
@@ -62,8 +62,12 @@ Click **"Environment"** and add:
 
 | Key | Value |
 |-----|-------|
-| `MONGO_URI` | `mongodb+srv://<user>:<pass>@cluster.mongodb.net/metricguard_db` |
-| `PORT` | `5000` |
+| `DB_HOST` | `gateway01.ap-southeast-1.prod.aws.tidbcloud.com` |
+| `DB_PORT` | `4000` |
+| `DB_USER` | `<your-tidb-username>` |
+| `DB_PASSWORD` | `<your-tidb-password>` |
+| `DB_NAME` | `metricguard_db` |
+| `PORT` | `8000` |
 
 ### 1.3 Deploy
 
@@ -153,6 +157,6 @@ git push origin main
 |---------|----------|
 | Backend returns 502 | Service is still starting or crashed. Check logs. |
 | Collector can't reach backend | Verify `BACKEND_URL` environment variable |
-| MongoDB connection timeout | Whitelist Render IPs in MongoDB Atlas (or use `0.0.0.0/0`) |
+| Database connection timeout | Verify `DB_HOST` and `DB_PORT`; check TiDB Cloud cluster is active and network access allows Render's outbound IPs |
 | Build fails | Check Dockerfile path and ensure all files are committed |
 | Service sleeps on free tier | Set up an external uptime monitor to ping the service |

@@ -1,3 +1,19 @@
+# ==========================================================
+# Transitional AI/RCA Runtime
+# ==========================================================
+
+# This module currently provides:
+
+# - anomaly inference
+# - RCA analysis
+# - anomaly CSV logging
+
+# during migration toward service-based backend inference.
+
+# The MetricGuard Agent remains the active monitoring runtime.
+# This module temporarily owns AI anomaly processing.
+# ==========================================================
+
 import time
 import json
 import os
@@ -10,13 +26,29 @@ import requests
 from collections import deque
 from datetime import datetime
 
+# Reduce TensorFlow warning spam
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 import tensorflow as tf
+
+# =========================================================
+# OPTIONAL CONFIG IMPORT
+# =========================================================
+
+try:
+    from config import Config
+except ImportError:
+    Config = None
 
 # =========================================================
 # PATH CONFIGURATION
 # =========================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Transitional compatibility fallback during migration
+# from legacy metrics.json collection
+# to backend-driven persistence.
 
 METRICS_FILE = os.path.abspath(
     os.path.join(BASE_DIR, "..", "..", "metrics.json")
@@ -45,6 +77,11 @@ AE_SCALER_PATH = os.path.join(
 )
 
 # --- Log paths ---
+# NOTE:
+# anomaly_logs.csv is currently maintained by the
+# transitional AI/RCA runtime layer during migration
+# toward service-based backend inference.
+
 ANOMALY_LOG_FILE = os.path.join(
     BASE_DIR, "..", "logs", "anomaly_logs.csv"
 )
@@ -65,6 +102,8 @@ SEQUENCE_LENGTH = 30
 COLLECTION_INTERVAL = 5
 
 FEATURE_COUNT = 9
+
+BACKEND_TIMEOUT = 2.0
 
 # Autoencoder anomaly threshold (overall MSE above this = anomaly)
 AE_THRESHOLD = 0.01
@@ -152,16 +191,15 @@ def get_backend_response_time():
     If the backend is not running or unreachable, falls back to the
     training mean.
     """
-    try:
-        from config import Config
+    if Config and hasattr(Config, "BACKEND_URL"):
         url = Config.BACKEND_URL
-    except Exception:
-        url = "http://localhost:5000/metrics"
+    else:
+        url = "http://localhost:8000/metrics"
 
     health_url = url.replace("/metrics", "/health")
     try:
         start_time = time.time()
-        response = requests.get(health_url, timeout=1.0)
+        response = requests.get(health_url, timeout=BACKEND_TIMEOUT)
         if response.ok:
             return (time.time() - start_time) * 1000.0
     except Exception:
@@ -333,7 +371,10 @@ def save_rca_result(rca_event):
     try:
         if os.path.exists(RCA_LOG_FILE):
             with open(RCA_LOG_FILE, "r") as f:
-                rca_history = json.load(f)
+                try:
+                    rca_history = json.load(f)
+                except json.JSONDecodeError:
+                    rca_history = []
         else:
             rca_history = []
 
@@ -350,10 +391,9 @@ def post_rca_to_backend(rca_event):
     """
     POST the RCA event to the backend API for dashboard access.
     """
-    try:
-        from config import Config
+    if Config and hasattr(Config, "BACKEND_URL"):
         url = Config.BACKEND_URL.replace("/metrics", "/anomalies")
-    except Exception:
+    else:
         url = "http://localhost:8000/anomalies"
 
     # Calculate severity and detected_by as per Phase 5 spec
@@ -391,7 +431,7 @@ def post_rca_to_backend(rca_event):
         response = requests.post(
             url,
             json=anomaly_payload,
-            timeout=5,
+            timeout=BACKEND_TIMEOUT,
             headers={"Content-Type": "application/json"},
         )
         if response.ok:
@@ -422,7 +462,10 @@ def get_rca_statistics():
             return {"total_anomalies": 0, "records": []}
 
         with open(RCA_LOG_FILE, "r") as f:
-            rca_history = json.load(f)
+            try:
+                rca_history = json.load(f)
+            except json.JSONDecodeError:
+                rca_history = []
 
         if not rca_history:
             return {"total_anomalies": 0, "records": []}
@@ -460,21 +503,23 @@ def get_rca_statistics():
 # =========================================================
 
 def read_latest_metrics():
-    try:
-        from config import Config
+    if Config and hasattr(Config, "BACKEND_URL"):
         url = Config.BACKEND_URL
-    except Exception:
+    else:
         url = "http://localhost:8000/metrics"
 
     try:
-        response = requests.get(f"{url}?limit=1", timeout=2)
+        response = requests.get(f"{url}?limit=1", timeout=BACKEND_TIMEOUT)
         if response.ok:
             data = response.json()
             if data and isinstance(data, list):
                 latest = data[0]
                 return {
                     "cpu_usage": latest.get("cpu_usage", 0.0),
-                    "ram_usage": latest.get("memory_usage", 0.0),
+                    "ram_usage": latest.get(
+                        "ram_usage",
+                        latest.get("memory_usage", 0.0)
+                    ),
                     "disk_usage": 0.0,  # Not stored in DB
                     "disk_read_speed": f"{latest.get('disk_read', 0.0)} KB",
                     "disk_write_speed": f"{latest.get('disk_write', 0.0)} KB",
@@ -547,8 +592,8 @@ def save_anomaly(
 
     df.to_csv(
         ANOMALY_LOG_FILE,
-        mode='a',
-        header=not os.path.exists(
+        mode="a",
+        header=not os.path.isfile(
             ANOMALY_LOG_FILE
         ),
         index=False,
@@ -725,7 +770,7 @@ if __name__ == "__main__":
 
                     print(
                         "FINAL ALERT:"
-                        " SYSTEM ANOMALY DETECTED"
+                        " AI ANOMALY DETECTED"
                     )
 
                     print(
@@ -854,7 +899,8 @@ if __name__ == "__main__":
         except Exception as e:
 
             print(
-                f"\nError Occurred: {e}"
+                f"\n[Runtime Error] "
+                f"{type(e).__name__}: {e}"
             )
 
             time.sleep(

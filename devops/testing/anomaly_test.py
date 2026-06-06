@@ -13,6 +13,7 @@ Tests included:
     1. CPU Stress Test   — spikes CPU to ~100%
     2. RAM Stress Test   — allocates large memory blocks
     3. Fake Anomaly Test — generates artificial extreme metrics
+    4. Full Collection   — validates MetricCollector.collect()
 
 How to run:
     cd devops/
@@ -22,32 +23,49 @@ How to run:
     python -m pytest testing/anomaly_test.py::TestCPUStress -v
     python -m pytest testing/anomaly_test.py::TestRAMStress -v
     python -m pytest testing/anomaly_test.py::TestFakeAnomaly -v
+    python -m pytest testing/anomaly_test.py::TestFullCollection -v
 
 Dependencies:
-    pip install psutil pytest requests
+    pip install psutil pytest requests pyyaml
 """
 
 import sys
 import os
 import time
+import logging
 import multiprocessing
 import psutil
 import pytest
 
-# Add the monitoring directory to the path so we can import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "monitoring"))
+# =========================================================
+# PATH SETUP
+# =========================================================
+# The test file lives in  devops/testing/
+# Agent modules live in   devops/agent/
 
-from metric_collector import (
-    collect_all_metrics,
-    get_cpu_usage,
-    get_ram_usage,
-    get_disk_usage,
-    get_process_count,
-    get_system_load,
-    get_system_uptime,
-    get_disk_io,
-    get_network_io,
-)
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+DEVOPS_DIR = os.path.dirname(TEST_DIR)
+AGENT_DIR = os.path.join(DEVOPS_DIR, "agent")
+
+sys.path.insert(0, AGENT_DIR)
+
+from collector import MetricCollector
+from config import AgentConfig
+
+
+# =========================================================
+# HELPER: Create a lightweight MetricCollector for tests
+# =========================================================
+
+def _make_collector() -> MetricCollector:
+    """
+    Build a MetricCollector with default config and a
+    silent logger.  No YAML file or running agent needed.
+    """
+    cfg = AgentConfig()
+    logger = logging.getLogger("anomaly_test")
+    logger.setLevel(logging.WARNING)  # suppress debug noise
+    return MetricCollector(cfg, logger)
 
 
 # ==========================================================
@@ -81,7 +99,7 @@ class TestCPUStress:
 
         How it works:
             1. Spawns multiple processes that burn CPU for 5 seconds.
-            2. While they run, collects CPU metrics.
+            2. While they run, collects CPU metrics via psutil.
             3. Asserts that reported CPU > 50%.
         """
         print("\n[CPU STRESS TEST] Starting CPU burn...")
@@ -97,7 +115,7 @@ class TestCPUStress:
 
         # Wait a moment for CPU to ramp up, then measure
         time.sleep(2)
-        cpu = get_cpu_usage()
+        cpu = psutil.cpu_percent(interval=1)
 
         # Clean up: wait for all burner processes to finish
         for p in processes:
@@ -115,7 +133,7 @@ class TestCPUStress:
         """
         Test: Normal CPU reading should be between 0 and 100.
         """
-        cpu = get_cpu_usage()
+        cpu = psutil.cpu_percent(interval=1)
         assert cpu is not None, "CPU metric returned None"
         assert 0.0 <= cpu <= 100.0, f"CPU out of range: {cpu}%"
 
@@ -142,13 +160,13 @@ class TestRAMStress:
             4. Asserts that usage increased.
         """
         print("\n[RAM STRESS TEST] Recording baseline RAM...")
-        baseline_ram = get_ram_usage()
+        baseline_ram = psutil.virtual_memory().percent
 
         # Allocate ~200MB (200 million bytes)
         print("[RAM STRESS TEST] Allocating ~200MB of RAM...")
         large_block = bytearray(200 * 1024 * 1024)  # 200MB
 
-        stressed_ram = get_ram_usage()
+        stressed_ram = psutil.virtual_memory().percent
         print(f"[RAM STRESS TEST] Baseline: {baseline_ram}%, "
               f"After allocation: {stressed_ram}%")
 
@@ -167,7 +185,7 @@ class TestRAMStress:
         """
         Test: Normal RAM reading should be between 0 and 100.
         """
-        ram = get_ram_usage()
+        ram = psutil.virtual_memory().percent
         assert ram is not None, "RAM metric returned None"
         assert 0.0 <= ram <= 100.0, f"RAM out of range: {ram}%"
 
@@ -281,20 +299,23 @@ class TestFakeAnomaly:
 
 class TestFullCollection:
     """
-    Tests the complete collect_all_metrics() function
-    to ensure all metrics are gathered successfully.
+    Tests the MetricCollector.collect() method to ensure
+    all metrics are gathered successfully via the active
+    agent architecture.
     """
 
-    def test_collect_all_returns_complete_payload(self):
+    def test_collect_returns_complete_payload(self):
         """
-        Test: collect_all_metrics() should return a dict
-        with all 10 metrics plus a timestamp.
+        Test: MetricCollector.collect() should return a dict
+        with all 10 metrics plus timestamp and agent_name.
         """
-        metrics = collect_all_metrics()
+        collector = _make_collector()
+        metrics = collector.collect()
 
         # Check all required keys exist
         required_keys = [
             "timestamp",
+            "agent_name",
             "cpu_usage",
             "ram_usage",
             "disk_usage",
@@ -316,10 +337,14 @@ class TestFullCollection:
         """
         Test: Each metric should be the correct type.
         """
-        metrics = collect_all_metrics()
+        collector = _make_collector()
+        metrics = collector.collect()
 
         # Timestamp should be a string
         assert isinstance(metrics["timestamp"], str)
+
+        # Agent name should be a string
+        assert isinstance(metrics["agent_name"], str)
 
         # Percentage metrics should be numbers
         assert isinstance(metrics["cpu_usage"], (int, float))

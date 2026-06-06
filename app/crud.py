@@ -222,3 +222,70 @@ def get_anomalies_filtered(
         logger.error("Failed to query filtered anomalies: %s", e, exc_info=True)
         raise e
 
+
+# ==========================================
+# LOG CRUD FUNCTIONS (Phase 7)
+# ==========================================
+
+def insert_log(db: Session, log_in) -> "Log":
+    """
+    Insert a single application log entry into the database.
+    """
+    from app.models import Log
+    from datetime import datetime
+    try:
+        # Parse the timestamp string into a datetime object
+        try:
+            ts = datetime.strptime(log_in.timestamp, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            ts = datetime.now()
+
+        db_log = Log(
+            timestamp=ts,
+            level=log_in.level,
+            service_name=log_in.service_name,
+            message=log_in.message,
+        )
+        db.add(db_log)
+        db.commit()
+        db.refresh(db_log)
+        logger.info("Inserted log entry ID %d [%s] from %s", db_log.id, db_log.level, db_log.service_name)
+        return db_log
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to insert log entry: %s", e, exc_info=True)
+        raise e
+
+
+def get_logs(
+    db: Session,
+    limit: int = 100,
+    offset: int = 0,
+    level: str = None,
+    service_name: str = None,
+    start_date: "datetime" = None,
+    end_date: "datetime" = None,
+) -> list:
+    """
+    Retrieve log entries with optional filtering by level,
+    service_name, and date range.
+    """
+    from app.models import Log
+    try:
+        query = db.query(Log)
+
+        # Apply filters
+        if level:
+            query = query.filter(Log.level == level.upper())
+        if service_name:
+            query = query.filter(Log.service_name == service_name)
+        if start_date:
+            query = query.filter(Log.timestamp >= start_date)
+        if end_date:
+            query = query.filter(Log.timestamp <= end_date)
+
+        return query.order_by(desc(Log.timestamp)).offset(offset).limit(limit).all()
+    except Exception as e:
+        logger.error("Failed to query logs: %s", e, exc_info=True)
+        raise e
+

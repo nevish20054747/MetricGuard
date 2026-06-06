@@ -20,7 +20,7 @@ This guide explains how to test the MetricGuard backend API endpoints that the m
 
 ## Prerequisites
 
-- Backend server running on `http://localhost:5000`
+- Backend server running on `http://localhost:8000`
 - `curl` installed (comes with most OS)
 - Or Python with `requests` library
 
@@ -32,7 +32,7 @@ This guide explains how to test the MetricGuard backend API endpoints that the m
 
 ### Using curl:
 ```bash
-curl -X GET http://localhost:5000/health
+curl -X GET http://localhost:8000/health
 ```
 
 ### Expected Response:
@@ -53,7 +53,7 @@ curl -X GET http://localhost:5000/health
 
 ### Using curl:
 ```bash
-curl -X POST http://localhost:5000/metrics \
+curl -X POST http://localhost:8000/metrics \
   -H "Content-Type: application/json" \
   -d '{
     "timestamp": "2026-05-16T14:00:00",
@@ -74,7 +74,7 @@ curl -X POST http://localhost:5000/metrics \
 ```python
 import requests
 
-url = "http://localhost:5000/metrics"
+url = "http://localhost:8000/metrics"
 
 payload = {
     "timestamp": "2026-05-16T14:00:00",
@@ -113,7 +113,7 @@ print(f"Body: {response.json()}")
 
 ### Using curl:
 ```bash
-curl -X POST http://localhost:5000/metrics \
+curl -X POST http://localhost:8000/metrics \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -135,7 +135,7 @@ curl -X POST http://localhost:5000/metrics \
 
 ### Using curl:
 ```bash
-curl -X POST http://localhost:5000/metrics \
+curl -X POST http://localhost:8000/metrics \
   -H "Content-Type: application/json" \
   -d '{
     "cpu_usage": 45.2,
@@ -157,14 +157,14 @@ curl -X POST http://localhost:5000/metrics \
 
 ### Using curl:
 ```bash
-curl -X GET http://localhost:5000/metrics
+curl -X GET http://localhost:8000/metrics
 ```
 
 ### Using Python:
 ```python
 import requests
 
-response = requests.get("http://localhost:5000/metrics")
+response = requests.get("http://localhost:8000/metrics")
 metrics = response.json()
 
 print(f"Total metrics: {len(metrics)}")
@@ -198,7 +198,7 @@ for m in metrics[:3]:  # Show first 3
 import requests
 import time
 
-url = "http://localhost:5000/metrics"
+url = "http://localhost:8000/metrics"
 payload = {
     "timestamp": "2026-05-16T14:00:00",
     "cpu_usage": 50.0,
@@ -241,7 +241,7 @@ print(f"Success: {success}/50, Failed: {fail}/50")
 
 ### Using curl:
 ```bash
-curl -X POST http://localhost:5000/metrics \
+curl -X POST http://localhost:8000/metrics \
   -H "Content-Type: text/plain" \
   -d "This is not JSON"
 ```
@@ -271,5 +271,5 @@ curl -X POST http://localhost:5000/metrics \
 |---------|----------|
 | `Connection refused` | Backend is not running. Start with `python app.py` |
 | `500 Internal Server Error` | Check backend logs for exceptions |
-| Slow responses | Check MongoDB performance and indexes |
+| Slow responses | Check database performance and indexes (TiDB Cloud SQL Editor) |
 | Timeout errors | Increase `REQUEST_TIMEOUT` in config.py |

@@ -9,7 +9,14 @@ Purpose:
     2. Feature extraction produces 9-element vectors.
     3. Autoencoder loads and performs inference.
     4. RCA logic correctly maps feature errors to categories.
-    5. Flask API endpoints accept and return RCA events.
+    5. Backend API endpoints accept and return RCA events.
+
+Legacy Compatibility Note:
+    This test suite imports from monitoring/realtime_ai_detection.py
+    and monitoring/test_backend.py.  These ML/RCA functions have NOT
+    been ported to the agent/ architecture yet and remain in
+    monitoring/ as the sole source for AI inference and RCA logic.
+    This is an intentional legacy compatibility dependency.
 
 How to run:
     cd devops/
@@ -33,8 +40,14 @@ import pytest
 import numpy as np
 
 # =========================================================
-# PATH SETUP
+# PATH SETUP — Legacy Compatibility
 # =========================================================
+# The ML/RCA functions (parse_speed_string, extract_ae_features,
+# perform_rca, ae_model, ae_scaler) live exclusively in
+# monitoring/realtime_ai_detection.py and have not been
+# ported to the agent/ architecture.  This is intentional:
+# the AI pipeline is maintained separately and tested here
+# via its original module path.
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 DEVOPS_DIR = os.path.dirname(TEST_DIR)
@@ -448,13 +461,15 @@ class TestRCALogic:
 
 
 # ==========================================================
-# TEST 5: FLASK RCA ENDPOINTS
+# TEST 5: RCA API ENDPOINTS
 # ==========================================================
 
 class TestRCAEndpoints:
     """
-    Verify the Flask backend RCA API endpoints work correctly.
-    Uses Flask's built-in test client (no live server needed).
+    Verify the RCA API endpoints work correctly.
+    Uses the Flask test_backend.py test client (no live
+    server needed).  This tests the legacy mock backend's
+    RCA endpoints which mirror the production API contract.
     """
 
     @pytest.fixture(autouse=True)

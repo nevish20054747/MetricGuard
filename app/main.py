@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from app.database import engine, Base, SessionLocal, get_db, verify_db_connection
-from app.routers import metrics, anomalies, ml
+from app.routers import metrics, anomalies, ml, logs
 from app.ml_service import get_ml_service
 
 # =========================================================
@@ -96,6 +96,7 @@ app.add_middleware(
 app.include_router(metrics.router)
 app.include_router(anomalies.router)
 app.include_router(ml.router)
+app.include_router(logs.router)
 
 
 # =========================================================

@@ -1,63 +1,129 @@
 # ==========================================================
-# MetricGuard - Monitoring Service Dockerfile
-# ==========================================================
-#
-# Purpose:
-#   Containerizes the metric collector so it can run
-#   independently in any environment (local, cloud, CI/CD).
-#
-# How to build:
-#   docker build -f docker/Dockerfile.monitoring -t metricguard-monitor .
-#
-# How to run standalone:
-#   docker run --name monitor metricguard-monitor
-#
-# Note:
-#   Normally you use docker-compose (see docker-compose.yml)
-#   which starts this along with the backend and MongoDB.
+
+# MetricGuard - Agent Service Dockerfile
+
 # ==========================================================
 
-# --- Stage 1: Use a lightweight Python base image ---
+#
+
+# Purpose:
+
+# Containerizes the MetricGuard Agent so it can run
+
+# independently in any environment (local, cloud, CI/CD).
+
+#
+
+# Features:
+
+# - System metric collection
+
+# - Log monitoring with watchdog + pygtail
+
+# - HTTP delivery with retry/backoff
+
+# - YAML-based configuration
+
+#
+
+# How to build:
+
+# docker build -f docker/Dockerfile.monitoring -t metricguard-agent .
+
+#
+
+# How to run:
+
+# docker run --name monitor metricguard-agent
+
+#
+
+# ==========================================================
+
+# ----------------------------------------------------------
+
+# Base Image
+
+# ----------------------------------------------------------
+
 FROM python:3.11-slim
 
-# Set metadata labels
-LABEL maintainer="MetricGuard DevOps Team"
-LABEL description="MetricGuard Monitoring Metric Collector"
-LABEL version="1.0"
+# ----------------------------------------------------------
 
-# --- Environment variables ---
-# Prevent Python from writing .pyc files and enable unbuffered output
+# Metadata
+
+# ----------------------------------------------------------
+
+LABEL maintainer="MetricGuard DevOps Team"
+LABEL description="MetricGuard Monitoring Agent"
+LABEL version="2.0"
+
+# ----------------------------------------------------------
+
+# Environment Variables
+
+# ----------------------------------------------------------
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Default configuration (can be overridden in docker-compose.yml)
+# Default runtime configuration
+
 ENV BACKEND_URL=http://backend:5000/metrics
-ENV COLLECTION_INTERVAL=5
+ENV COLLECTION_INTERVAL=30
 ENV MAX_RETRIES=3
 ENV RETRY_DELAY=2
-ENV LOG_FILE=/app/logs/system.log
 ENV LOG_LEVEL=INFO
 ENV DISK_PATH=/
 
-# --- Set up working directory ---
+# ----------------------------------------------------------
+
+# Working Directory
+
+# ----------------------------------------------------------
+
 WORKDIR /app
 
-# --- Install dependencies first (for Docker layer caching) ---
-# Copy only requirements.txt first so that dependency installation
-# is cached unless requirements.txt changes.
-COPY monitoring/requirements.txt .
+# ----------------------------------------------------------
+
+# Install Dependencies
+
+# ----------------------------------------------------------
+
+# Copy requirements first for Docker layer caching
+
+COPY agent/requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --- Copy the monitoring source code ---
-COPY monitoring/ .
+# ----------------------------------------------------------
 
-# --- Create the logs directory ---
-RUN mkdir -p logs && touch logs/system.log
+# Copy Agent Source Code
 
-# --- Health check ---
-# Verifies that the Python process is still running
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import psutil; psutil.cpu_percent()" || exit 1
+# ----------------------------------------------------------
 
-# --- Run the metric collector ---
-CMD ["python", "metric_collector.py"]
+COPY agent/ .
+
+# ----------------------------------------------------------
+
+# Create Runtime Directories
+
+# ----------------------------------------------------------
+
+RUN mkdir -p logs watched_logs
+
+# ----------------------------------------------------------
+
+# Health Check
+
+# ----------------------------------------------------------
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD python -c "import psutil; psutil.cpu_percent()" || exit 1
+
+# ----------------------------------------------------------
+
+# Start MetricGuard Agent
+
+# ----------------------------------------------------------
+
+CMD ["python", "main.py"]

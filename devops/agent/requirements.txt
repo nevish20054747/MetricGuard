@@ -1,0 +1,16 @@
+# ==============================================
+# MetricGuard Agent Dependencies
+# ==============================================
+
+# System Metrics
+psutil>=5.9.8
+
+# HTTP Requests
+requests>=2.31.0
+
+# YAML Configuration
+PyYAML>=6.0.1
+
+# Log Monitoring
+watchdog>=4.0.0
+pygtail>=0.14.0

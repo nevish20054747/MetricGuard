@@ -61,3 +61,23 @@ class Anomaly(Base):
 
     def __repr__(self):
         return f"<Anomaly(id={self.id}, timestamp={self.timestamp}, root_cause='{self.root_cause}', severity='{self.severity}', ml_model_version='{self.ml_model_version}', metric_id={self.metric_id})>"
+
+
+class Log(Base):
+    """
+    SQLAlchemy ORM model representing application log entries
+    collected by the MetricGuard Agent log pipeline.
+    """
+    __tablename__ = "logs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    level = Column(String(20), nullable=False, index=True)
+    service_name = Column(String(100), nullable=False, index=True)
+    message = Column(String(2000), nullable=False)
+
+    # Audit field
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<Log(id={self.id}, timestamp={self.timestamp}, level='{self.level}', service_name='{self.service_name}')>"

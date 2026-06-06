@@ -23,7 +23,7 @@ def create_metric(
     """
     Store incoming metrics in TiDB and optionally run real-time anomaly detection.
 
-    Accepts the raw payload from metric_collector.py, parses
+    Accepts the raw payload from the MetricGuard Agent (sender.py), parses
     formatted speed strings into numeric KB values, persists the record,
     and runs the ML detection pipeline if enabled.
     """

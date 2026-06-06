@@ -1,100 +1,356 @@
 # 🔗 MetricGuard — Pipeline & Model Integration Guide
 
-This guide explains how the **Metric Collection Pipeline** integrates with the **AI Anomaly Detection Models** in MetricGuard. It outlines the data flow, feature mapping, preprocessing steps, and the ensemble decision logic.
+This guide explains how the **MetricGuard Agent Pipeline** integrates with the **AI Anomaly Detection Models** in MetricGuard. It outlines the runtime architecture, data flow, feature mapping, preprocessing steps, and the ensemble anomaly detection logic.
 
 ---
 
 ## 🏗️ Architecture & Data Flow
 
-The monitoring system consists of three main components:
-1. **Metric Collector (`metric_collector.py`)**: Gathers live system metrics every 5 seconds and writes them to a shared local database file (`metrics.json`).
-2. **Backend API (`test_backend.py`)**: Receives the metrics via HTTP POST to persist them database-side (simulated in our dev pipeline).
-3. **AI Anomaly Detection (`realtime_ai_detection.py`)**: Connects to the metric collection pipeline by consuming the shared `metrics.json` and feeding the processed features into trained machine learning models.
+The MetricGuard monitoring ecosystem consists of four major components:
 
-```
+1. **MetricGuard Agent (`main.py`)**
+
+   * Acts as the primary runtime orchestrator.
+   * Coordinates metric collection, log monitoring, configuration handling, and backend communication.
+   * Runs continuously as the active monitoring service.
+
+2. **Metric Collection & Log Pipeline**
+
+   * `collector.py` gathers live system metrics using `psutil`.
+   * `sender.py` transmits metrics to the Backend API via HTTP POST requests.
+   * `log_collector.py` monitors application and server logs for real-time log streaming.
+
+3. **Backend API Service**
+
+   * Receives metrics and log events from the agent pipeline.
+   * Persists monitoring data into the MySQL-compatible TiDB Cloud database.
+   * Exposes health-check endpoints and downstream monitoring APIs.
+
+4. **AI Anomaly Detection (`realtime_ai_detection.py`)**
+
+   * Consumes the latest monitoring metrics from the active pipeline.
+   * Performs preprocessing and feature engineering.
+   * Feeds processed features into trained machine learning and deep learning models for anomaly detection.
+
+---
+
+### 📌 Runtime Pipeline
+
+```text
 ┌─────────────────────────┐
 │     System OS/HW        │
 └───────────┬─────────────┘
             │ psutil
             ▼
 ┌─────────────────────────┐
-│   metric_collector.py   │
+│      collector.py       │
+│  (Metric Collection)    │
 └───────────┬─────────────┘
-            ├─────────────────────────────────────────┐
-            │ writes to                               │ HTTP POST
-            ▼                                         ▼
-┌─────────────────────────┐                  ┌─────────────────┐
-│      metrics.json       │                  │  Backend API    │
-└───────────┬─────────────┘                  │  (Port 5000)    │
-            │ reads latest                    └────────┬────────┘
-            ▼                                          │ health check
-┌─────────────────────────┐                            │ response time
-│ realtime_ai_detection.py│◀───────────────────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│       main.py           │
+│  Agent Runtime Engine   │
+└───────────┬─────────────┘
+            │
+     ┌──────┴───────────────┐
+     │                      │
+     ▼                      ▼
+┌───────────────┐   ┌─────────────────┐
+│ sender.py     │   │ log_collector.py│
+│ HTTP Metrics  │   │ Log Monitoring  │
+└──────┬────────┘   └────────┬────────┘
+       │                     │
+       └──────────┬──────────┘
+                  ▼
+        ┌──────────────────┐
+        │  Backend API     │
+        │   Service        │
+        └────────┬─────────┘
+                 │
+                 ▼
+    ┌───────────────────────────┐
+    │ MySQL (TiDB Cloud)        │
+    │ Monitoring Data Storage   │
+    └──────────┬────────────────┘
+               │
+               ▼
+┌─────────────────────────┐
+│ realtime_ai_detection.py│
 └───────────┬─────────────┘
             ├─────────────────────────┐
             ▼                         ▼
 ┌─────────────────────────┐ ┌─────────────────────────┐
-│  Isolation Forest (ML)  │ │  LSTM Autoencoder (DL)  │
-│  - Spot point anomalies │ │  - Spot trend anomalies │
-└───────────┬─────────────┘ └─────────┬───────────────┘
+│  Isolation Forest (ML)  │ │  LSTM Autoencoder (DL) │
+│  - Point anomalies      │ │  - Trend anomalies     │
+└───────────┬─────────────┘ └─────────┬──────────────┘
             └────────────┬────────────┘
                          ▼
-             [ FINAL ENSEMBLE ALERT ]
-                         │ logs to
+              [ FINAL ENSEMBLE ALERT ]
+                         │
                          ▼
-              anomaly_logs.csv
+                 anomaly_logs.csv
 ```
 
 ---
 
-## 🛠️ Model Connections & Feature Engineering
+## 🔄 Transitional AI Compatibility Note
 
-### 1. Isolation Forest (Point Anomaly Detection)
-The Isolation Forest model is designed to catch instant, severe point anomalies (such as a sudden bottleneck). It requires **3 features**:
+Certain AI and RCA (Root Cause Analysis) components currently retain transitional compatibility with parts of the legacy monitoring pipeline during the architecture migration phase.
 
-* **Feature 1: `response_time_ms`**
-  - *Pipeline Connection*: Calculated dynamically by the detection engine. It issues a fast HTTP GET ping to the backend's `/health` endpoint and records the round-trip latency in milliseconds.
-  - *Offline Fallback*: If the backend API is unreachable, it automatically falls back to the training baseline mean of `2357.75` ms to avoid breaking model distribution shapes.
-* **Feature 2: `cpu_usage_percent`**
-  - *Pipeline Connection*: Loaded from the `"cpu_usage"` key in the latest cycle of `metrics.json`.
-* **Feature 3: `memory_usage_mb`**
-  - *Pipeline Connection*: Computed using `psutil.virtual_memory().used` divided by `1024 * 1024` to convert system bytes into Megabytes.
+However, the active production-oriented runtime architecture is now fully centered around:
 
-*Data Scaling*: These 3 features are reshaped into an array `[[response_time, cpu, memory]]` and normalized using a pre-saved Standard Scaler (`scaler.pkl`) before inference.
+```text
+devops/agent/
+```
 
----
+The deprecated `monitoring/` architecture is retained only for:
 
-### 2. LSTM Autoencoder (Temporal Trend Anomaly Detection)
-The Long Short-Term Memory (LSTM) Autoencoder detects sequential anomalies (e.g. resource leaks or CPU load that hangs high over a longer period). It evaluates a time-series window:
-
-* **Sequence Buffer**: A rolling FIFO queue (`collections.deque`) of length `10`.
-* **Feature Evaluated**: `[cpu_usage_percent]`.
-* **Flow**:
-  1. The latest `cpu_usage_percent` is scaled using a MinMaxScaler (`scaler.save`).
-  2. The scaled value is appended to the sequence buffer.
-  3. Until the buffer has 10 elements (after the first 50 seconds of runtime), the LSTM does not execute.
-  4. Once `len(buffer) == 10`, the sequence is reshaped to shape `(1, 10, 1)` and fed into the model.
-  5. The model outputs a reconstructed sequence of shape `(1, 10, 1)`.
-  6. The **Mean Squared Error (MSE)** reconstruction loss is calculated:
-     $$\text{MSE} = \frac{1}{10}\sum_{i=1}^{10}(x_i - \hat{x}_i)^2$$
-  7. If the reconstruction error exceeds the trained threshold (`0.025853`), it flags a sequence anomaly.
+* historical reference
+* compatibility support
+* legacy AI module transition handling
 
 ---
 
-## 🤝 Preprocessing & Value Parsing
+# 🛠️ Model Connections & Feature Engineering
 
-Metrics written by the collector contain formatted string speeds (e.g., `"257.17 MB"`, `"47.07 KB"`). To facilitate downstream processing and potential feature expansion:
-- The detection pipeline uses a mapping utility in `read_latest_metrics` to ensure all key structures are matched.
-- Speeds can be stripped of their units and converted to numeric floats (in KB or MB) if any additional models require raw speeds.
+## 1. Isolation Forest (Point Anomaly Detection)
+
+The Isolation Forest model is designed to detect sudden, high-severity point anomalies such as:
+
+* CPU spikes
+* backend latency surges
+* abnormal memory pressure
+* unexpected resource bottlenecks
+
+The model evaluates **3 primary features**.
 
 ---
 
-## 🚨 Ensemble Decision Logic
+### Feature 1: `response_time_ms`
 
-The final alert is triggered using an **OR logic** gate to maximize sensitivity to different threat vectors:
+**Pipeline Connection**
 
-$$\text{Alert} = (\text{Isolation Forest Prediction} == -1) \lor (\text{LSTM Reconstruction Loss} > \text{Threshold})$$
+* Calculated dynamically by the anomaly detection engine.
+* A lightweight HTTP health-check request is sent to the Backend API Service.
+* The round-trip latency is measured in milliseconds.
 
-When an alert is raised:
-1. It prints a warning to the console stdout: `FINAL ALERT: SYSTEM ANOMALY DETECTED`.
-2. The complete metric snapshot along with the Isolation Forest prediction and LSTM MSE error is appended to `devops/logs/anomaly_logs.csv` for downstream alerting.
+**Offline Fallback**
+
+* If the Backend API is temporarily unreachable, the pipeline falls back to the trained baseline mean value:
+
+```text
+2357.75 ms
+```
+
+This prevents abnormal inference behavior caused by missing latency data.
+
+---
+
+### Feature 2: `cpu_usage_percent`
+
+**Pipeline Connection**
+
+* Loaded from the latest metric payload generated by the active agent pipeline.
+* Originates from `collector.py` using `psutil.cpu_percent()`.
+
+---
+
+### Feature 3: `memory_usage_mb`
+
+**Pipeline Connection**
+
+* Computed using:
+
+```python
+psutil.virtual_memory().used / (1024 * 1024)
+```
+
+* Converts raw system memory consumption into Megabytes.
+
+---
+
+### Data Scaling
+
+The features are transformed into:
+
+```python
+[[response_time, cpu, memory]]
+```
+
+before being normalized using the pre-trained Standard Scaler:
+
+```text
+scaler.pkl
+```
+
+This preserves feature distribution consistency between training and inference.
+
+---
+
+# 🧠 2. LSTM Autoencoder (Temporal Trend Anomaly Detection)
+
+The Long Short-Term Memory (LSTM) Autoencoder detects sequential or long-duration anomalies such as:
+
+* gradual memory leaks
+* sustained CPU pressure
+* unstable resource trends
+* abnormal behavioral sequences
+
+Unlike Isolation Forest, which detects instantaneous spikes, the LSTM model focuses on temporal behavior patterns.
+
+---
+
+## Sequence Buffer
+
+The model maintains:
+
+```python
+collections.deque(maxlen=10)
+```
+
+which acts as a rolling FIFO sequence window.
+
+---
+
+## Feature Evaluated
+
+```python
+[cpu_usage_percent]
+```
+
+---
+
+## Runtime Flow
+
+1. The latest `cpu_usage_percent` metric is scaled using a MinMaxScaler.
+
+2. The scaled value is appended to the sequence buffer.
+
+3. Until the buffer accumulates 10 entries (roughly 50 seconds of runtime at 5-second intervals), inference does not execute.
+
+4. Once:
+
+```python
+len(buffer) == 10
+```
+
+the sequence is reshaped into:
+
+```python
+(1, 10, 1)
+```
+
+5. The reshaped sequence is passed into the trained LSTM Autoencoder.
+
+6. The model reconstructs the sequence and produces an output tensor of identical shape.
+
+7. The reconstruction loss is computed using Mean Squared Error (MSE):
+
+\text{MSE} = \frac{1}{10}\sum_{i=1}^{10}(x_i - \hat{x}_i)^2
+
+8. If the reconstruction loss exceeds the trained threshold:
+
+```text
+0.025853
+```
+
+the pipeline flags the sequence as anomalous.
+
+---
+
+# 🤝 Preprocessing & Value Parsing
+
+The metric collection pipeline may produce formatted values such as:
+
+```text
+"257.17 MB"
+"47.07 KB"
+```
+
+To support downstream ML processing:
+
+* metric parsing utilities normalize values
+* units may be converted into raw numeric representations
+* feature mapping ensures schema consistency across the pipeline
+
+This design enables future expansion into:
+
+* network anomaly detection
+* disk throughput anomaly detection
+* bandwidth pattern analysis
+* multi-feature sequence learning
+
+---
+
+# 🚨 Ensemble Decision Logic
+
+MetricGuard uses an ensemble-based anomaly detection strategy to maximize detection sensitivity across multiple threat patterns.
+
+The final alert decision uses OR-based ensemble logic:
+
+\text{Alert} = (\text{Isolation Forest Prediction} == -1) \lor (\text{LSTM Reconstruction Loss} > \text{Threshold})
+
+This allows the system to detect:
+
+* sudden point anomalies
+* slow temporal degradation
+* hybrid behavioral anomalies
+
+---
+
+## Alert Handling Workflow
+
+When an anomaly is detected:
+
+1. A warning message is emitted to the runtime console:
+
+```text
+FINAL ALERT: SYSTEM ANOMALY DETECTED
+```
+
+2. The complete monitoring snapshot is logged along with:
+
+* Isolation Forest prediction
+* LSTM reconstruction loss
+* anomaly metadata
+* runtime context
+
+3. Alert records are appended to:
+
+```text
+devops/logs/anomaly_logs.csv
+```
+
+for downstream:
+
+* RCA analysis
+* incident investigation
+* SIEM integration
+* historical anomaly tracking
+* dashboard visualization
+
+---
+
+# ✅ Summary
+
+MetricGuard combines:
+
+* real-time system monitoring
+* distributed metric collection
+* backend-integrated telemetry
+* machine learning anomaly detection
+* deep learning sequence analysis
+* ensemble alerting
+
+into a unified production-oriented observability and anomaly detection platform.
+
+The migrated agent-based architecture improves:
+
+* modularity
+* scalability
+* deployment consistency
+* runtime maintainability
+* monitoring extensibility
+
+while preserving compatibility with transitional AI/RCA workflows during the migration lifecycle.

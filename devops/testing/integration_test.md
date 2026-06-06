@@ -5,7 +5,7 @@
 This guide explains how to perform **integration testing** for the MetricGuard monitoring pipeline. Integration tests verify that all components work together correctly:
 
 ```
-Collector → Backend API → MongoDB → Dashboard
+Agent → Backend API → MySQL (TiDB Cloud) → Dashboard
 ```
 
 ---
@@ -14,17 +14,19 @@ Collector → Backend API → MongoDB → Dashboard
 
 Before running integration tests, ensure:
 
-1. **MongoDB** is running (local or Atlas)
-2. **Backend API** is running on `http://localhost:5000`
-3. **Monitoring Collector** is running
+1. **MySQL / TiDB Cloud** database is accessible (external managed service — no local install needed)
+2. **Backend API** is running on `http://localhost:8000`
+3. **MetricGuard Agent** is running (`python devops/agent/main.py`)
 4. **Python 3.9+** is installed
-5. **Dependencies installed**: `pip install -r monitoring/requirements.txt`
+5. **Dependencies installed**: `pip install -r devops/agent/requirements.txt`
 
 ---
 
-## Test 1: Verify MongoDB Connection
+## Test 1: Verify Database Connection *(Legacy reference — see note)*
 
-**Purpose**: Confirm the backend can connect to MongoDB.
+> ⚠️ **Note:** This test was written for the original MongoDB architecture. The current backend connects to MySQL / TiDB Cloud via SQLAlchemy. Use the backend's `/health` endpoint (Test 2) to verify database connectivity in the current stack.
+
+**Purpose**: Confirm the backend can connect to the database.
 
 ### Steps:
 
@@ -77,7 +79,7 @@ Before running integration tests, ensure:
 
 2. Send a test metric:
    ```bash
-   curl -X POST http://localhost:5000/metrics \
+   curl -X POST http://localhost:8000/metrics \
      -H "Content-Type: application/json" \
      -d '{
        "timestamp": "2026-05-16T14:00:00",
@@ -113,7 +115,7 @@ Before running integration tests, ensure:
    }
 
    response = requests.post(
-       "http://localhost:5000/metrics",
+       "http://localhost:8000/metrics",
        json=payload
    )
 
@@ -140,7 +142,12 @@ Before running integration tests, ensure:
 
 2. Wait 15 seconds for 3 collection cycles.
 
-3. Check MongoDB for stored metrics:
+3. Verify stored metrics via the backend API:
+   ```bash
+   curl http://localhost:8000/metrics?limit=5
+   ```
+
+> ⚠️ **Note:** The direct pymongo check below is retained as a legacy reference only. The current stack uses SQLAlchemy/TiDB Cloud — query via the REST API instead.
    ```python
    from pymongo import MongoClient
 
@@ -170,13 +177,13 @@ Before running integration tests, ensure:
 
 1. Start only the collector (without the backend):
    ```bash
-   cd monitoring/
-   python metric_collector.py
+   cd devops/agent/
+   python main.py
    ```
 
 2. Observe logs:
    ```
-   [2026-05-16 14:00:05] ERROR - Connection failed (attempt 1/3): Backend at http://localhost:5000/metrics is unreachable
+   [2026-05-16 14:00:05] ERROR — Connection failed (attempt 1/3): Backend at http://localhost:8000/metrics is unreachable
    [2026-05-16 14:00:07] INFO  - Retrying in 2 seconds...
    [2026-05-16 14:00:09] ERROR - Connection failed (attempt 2/3): ...
    ```
@@ -215,13 +222,10 @@ Before running integration tests, ensure:
    ```bash
    # Ping the backend service
    python -c "import socket; print(socket.gethostbyname('backend'))"
-
-   # Ping MongoDB
-   python -c "import socket; print(socket.gethostbyname('mongodb'))"
    ```
 
 ### Expected Result:
-- Both `backend` and `mongodb` resolve to internal Docker IPs.
+- `backend` resolves to an internal Docker IP.
 
 ---
 
@@ -229,9 +233,9 @@ Before running integration tests, ensure:
 
 | # | Test | Status |
 |---|------|--------|
-| 1 | MongoDB connection works | ⬜ |
+| 1 | Database (TiDB Cloud) connection works | ⬜ |
 | 2 | Backend accepts POST /metrics | ⬜ |
-| 3 | Full pipeline: Collector → Backend → MongoDB | ⬜ |
+| 3 | Full pipeline: Agent → Backend → MySQL (TiDB Cloud) | ⬜ |
 | 4 | Collector survives backend downtime | ⬜ |
 | 5 | Docker DNS resolution works | ⬜ |
 | 6 | Logs appear in logs/system.log | ⬜ |
@@ -245,7 +249,7 @@ Before running integration tests, ensure:
 | Problem | Solution |
 |---------|----------|
 | `ConnectionRefusedError` | Backend is not running. Start it first. |
-| `pymongo.errors.ServerSelectionTimeoutError` | MongoDB is not running or wrong URI. |
-| Collector crashes | Check `logs/system.log` for the full traceback. |
+| `OperationalError: Can't connect to MySQL` | TiDB Cloud is unreachable. Check `DB_HOST` and network access. |
+| Collector crashes | Check `agent/logs/agent.log` for the full traceback. |
 | Docker containers can't reach each other | Verify they're on the same Docker network. |
-| Metrics missing from MongoDB | Check backend logs for errors on the `/metrics` endpoint. |
+| Metrics missing from database | Check backend logs for errors on the `/metrics` endpoint. |

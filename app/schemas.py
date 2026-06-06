@@ -20,7 +20,7 @@ class MetricCreate(MetricBase):
 
 class MetricCollectorInput(BaseModel):
     """
-    Accepts the raw payload from metric_collector.py.
+    Accepts the raw payload from the MetricGuard Agent (sender.py).
     Speed fields arrive as formatted strings (e.g. '4.39 MB').
     The router will parse these into float KB before storing.
     """
@@ -118,4 +118,36 @@ class RCAStatsResponse(BaseModel):
     total_anomalies: int
     by_root_cause: dict[str, int]
     by_severity: dict[str, int]
+
+
+# ==========================================
+# LOG COLLECTION SCHEMAS (Phase 7)
+# ==========================================
+
+class LogCreate(BaseModel):
+    """Input schema for creating a log entry from the agent."""
+    timestamp: str
+    level: str
+    service_name: str
+    message: str
+
+    @field_validator("level")
+    @classmethod
+    def level_must_be_valid(cls, v: str) -> str:
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if v.upper() not in allowed:
+            raise ValueError(f"level must be one of {allowed}, got '{v}'")
+        return v.upper()
+
+
+class LogResponse(BaseModel):
+    """Output schema for returning a stored log entry."""
+    id: int
+    timestamp: datetime
+    level: str
+    service_name: str
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 

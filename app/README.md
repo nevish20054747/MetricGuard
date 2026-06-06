@@ -67,7 +67,7 @@ pip install fastapi uvicorn sqlalchemy pymysql cryptography python-dotenv
 pip install alembic httpx2 pytest
 
 # Install ML libraries (TensorFlow, scikit-learn, joblib, etc.)
-pip install -r devops/monitoring/requirements.txt
+pip install -r devops/agent/requirements.txt
 ```
 
 ### 2. Configure the Environment (`.env`)
@@ -112,9 +112,9 @@ Open two additional terminal windows (with `.venv` active) to test the continuou
 ### Terminal A: Run the Metrics Collector
 Start the collector to capture live system statistics and send them to the backend:
 ```powershell
-python devops/monitoring/metric_collector.py
+python devops/agent/main.py
 ```
-*This script runs every 5 seconds, collecting system state metrics and posting them directly to the backend database.*
+*This script starts the MetricGuard Agent, which collects system metrics at a configurable interval and posts them directly to the backend API. It also monitors log files in the background via watchdog/pygtail.*
 
 ### Terminal B: Run the Real-Time AI Detector
 Start the standalone monitoring loop to analyze and report anomalies:

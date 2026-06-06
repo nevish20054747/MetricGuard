@@ -138,7 +138,7 @@ def parse_speed_string(speed_str) -> float:
         return 0.0
 
 
-def _get_backend_response_time(backend_url: str = "http://localhost:5000/metrics") -> float:
+def _get_backend_response_time(backend_url: str = "http://localhost:8000/metrics") -> float:
     """
     Measure real-time HTTP response time of the backend in ms.
     Falls back to training mean if unreachable.

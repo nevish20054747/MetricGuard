@@ -13,10 +13,10 @@ This guide explains how to deploy the complete MetricGuard system using Docker a
 │              Docker Network                  │
 │                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │Monitoring│──▶│ Backend  │──▶│ MongoDB  │  │
-│  │Collector │  │   API    │  │ Database │  │
+│  │Monitoring│──▶│ Backend  │──▶│ MySQL /  │  │
+│  │Collector │  │   API    │  │TiDB Cloud│  │
 │  └──────────┘  └──────────┘  └──────────┘  │
-│    :none         :5000         :27017       │
+│    :none         :8000         :4000        │
 └─────────────────────────────────────────────┘
 ```
 
@@ -56,8 +56,7 @@ docker ps
 ```
 CONTAINER ID  IMAGE                    STATUS         PORTS
 abc123        metricguard-monitoring   Up 30 seconds
-def456        metricguard-backend      Up 30 seconds  0.0.0.0:5000->5000/tcp
-ghi789        mongo:7.0                Up 30 seconds  0.0.0.0:27017->27017/tcp
+def456        metricguard-backend      Up 30 seconds  0.0.0.0:8000->8000/tcp
 ```
 
 ---
@@ -77,7 +76,7 @@ Create a `.env` file in the project root to override defaults:
 
 ```env
 # Backend connection
-BACKEND_URL=http://backend:5000/metrics
+BACKEND_URL=http://backend:8000/metrics
 
 # Collection settings
 COLLECTION_INTERVAL=5
@@ -89,9 +88,12 @@ RETRY_DELAY=2
 # Logging
 LOG_LEVEL=INFO
 
-# MongoDB
-MONGO_INITDB_ROOT_USERNAME=metricguard
-MONGO_INITDB_ROOT_PASSWORD=metricguard123
+# TiDB Cloud database connection
+DB_HOST=gateway01.ap-southeast-1.prod.aws.tidbcloud.com
+DB_PORT=4000
+DB_USER=<your-tidb-username>
+DB_PASSWORD=<your-tidb-password>
+DB_NAME=metricguard_db
 ```
 
 ### Step 3: Build the Docker Images
@@ -102,8 +104,8 @@ docker-compose -f docker/docker-compose.yml build
 
 This builds:
 - `metricguard-monitoring` from `docker/Dockerfile.monitoring`
-- Uses `mongo:7.0` image for MongoDB (pre-built)
 - Backend image should be built by the backend team
+- The backend connects to TiDB Cloud (external managed database — no local DB container required)
 
 ### Step 4: Start the Services
 
@@ -126,9 +128,6 @@ docker logs metricguard-monitoring -f
 
 # Check backend logs
 docker logs metricguard-backend -f
-
-# Check MongoDB logs
-docker logs metricguard-mongodb -f
 ```
 
 ---
@@ -181,10 +180,9 @@ docker-compose -f docker/docker-compose.yml up --scale monitoring=3 -d
 
 | Problem | Solution |
 |---------|----------|
-| `port 5000 already in use` | Stop other services using port 5000 or change the port in docker-compose.yml |
-| `port 27017 already in use` | Stop local MongoDB or change the port mapping |
+| `port 8000 already in use` | Stop other services using port 8000 or change the port in `docker-compose.yml` |
 | Monitoring can't reach backend | Verify both are on the `metricguard-network` |
-| MongoDB data lost after restart | Ensure the `mongo_data` volume is configured |
+| Database connection error | Check `DB_HOST`, `DB_USER`, `DB_PASSWORD` environment variables in `docker-compose.yml` |
 | Build fails | Run `docker system prune` to free space, then rebuild |
 | Container keeps restarting | Check logs with `docker logs <container-name>` |
 
@@ -192,9 +190,9 @@ docker-compose -f docker/docker-compose.yml up --scale monitoring=3 -d
 
 ## Production Checklist
 
-- [ ] Change MongoDB password from default
+- [ ] Set `DB_PASSWORD` to a strong secret value (use Docker secrets or an `.env` file)
 - [ ] Set `LOG_LEVEL=WARNING` to reduce log volume
-- [ ] Configure persistent volume for MongoDB data
+- [ ] Verify TiDB Cloud IP access list allows the Docker host's outbound IP
 - [ ] Set up monitoring alerts for container health
 - [ ] Enable Docker restart policies (already set to `always`)
 - [ ] Configure log rotation to prevent disk fill
