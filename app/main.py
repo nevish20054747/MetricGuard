@@ -8,6 +8,7 @@ from datetime import datetime
 from app.database import engine, Base, SessionLocal, get_db, verify_db_connection
 from app.routers import metrics, anomalies, ml, logs
 from backend.routes.correlation_routes import router as correlation_router  # Phase 10
+from backend.service_impact.routes import router as service_impact_router  # Phase 11
 from app.ml_service import get_ml_service
 from backend.jobs.correlation_scheduler import get_scheduler
 from backend.services.log_anomaly_service import get_log_anomaly_service
@@ -141,6 +142,7 @@ app.include_router(anomalies.router)
 app.include_router(ml.router)
 app.include_router(logs.router)
 app.include_router(correlation_router)  # Phase 10: Metric-Log Correlation Engine
+app.include_router(service_impact_router)  # Phase 11: Service Impact Analysis & Dependency Graph
 
 
 # =========================================================
