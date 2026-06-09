@@ -4,8 +4,6 @@ MetricGuard — Correlation Schemas  (schemas.py)
 ==========================================================
 
 Phase 10: Metric-Log Correlation Engine
-
-Pydantic response models for the correlation REST API.
 """
 
 from pydantic import BaseModel, ConfigDict
@@ -29,6 +27,11 @@ class CorrelationResponse(BaseModel):
     inferred_cause: Optional[str] = None
     confidence: float
     created_at: datetime
+
+    # Phase 11 Prep columns
+    service_name: Optional[str] = None
+    host_name: Optional[str] = None
+    container_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

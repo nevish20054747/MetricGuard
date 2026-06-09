@@ -4,41 +4,6 @@ MetricGuard — Correlation Service  (correlation_service.py)
 ==========================================================
 
 Phase 10: Metric-Log Correlation Engine
-
-Purpose
--------
-Orchestrates the full correlation pipeline:
-
-    1. Load recent metric anomalies  (from ``anomalies`` table)
-    2. Load recent log anomalies     (ERROR/CRITICAL from ``logs`` table)
-    3. Match anomalies within 60-second time windows
-    4. Calculate a multi-factor correlation score
-    5. Infer the probable root cause via keyword matching
-    6. Persist correlation records to the ``correlations`` table
-
-Scoring Algorithm
-~~~~~~~~~~~~~~~~~
-Each (metric_anomaly, log_anomaly) pair is scored on three factors:
-
-    +------+---------------------------+--------+
-    | Wt   | Factor                    | Points |
-    +------+---------------------------+--------+
-    | 0.40 | Time proximity  (≤60 s)   |  0.40  |
-    | 0.20 | Severity match            |  0.20  |
-    | 0.40 | Keyword / cause match     |  0.40  |
-    +------+---------------------------+--------+
-    | Max  |                           |  1.00  |
-    +------+---------------------------+--------+
-
-Usage
------
-    from backend.services.correlation_service import CorrelationService
-    from app.database import SessionLocal
-
-    db = SessionLocal()
-    service = CorrelationService()
-    count = service.run_correlation_engine(db)
-    print(f"Created {count} correlations")
 """
 
 from __future__ import annotations
@@ -53,44 +18,24 @@ from sqlalchemy.orm import Session
 from app.models import Anomaly, Log
 from backend.models.correlation import Correlation
 from backend.utils.cause_mapper import infer_root_cause
+from backend.services.log_anomaly_service import get_log_anomaly_service
 
 logger = logging.getLogger("metricguard.correlation.service")
 
-
-# ==========================================================
-# SEVERITY MAPPING
-# ==========================================================
-# The anomalies table uses: low, warning, critical
-# The logs table uses:       DEBUG, INFO, WARNING, ERROR, CRITICAL
-#
-# For correlation scoring we map log levels to the anomaly
-# severity scale so we can compare like-for-like.
-# ==========================================================
-
+# Severity mapping for scoring comparison
 _LOG_LEVEL_TO_SEVERITY = {
     "ERROR":    "warning",
     "CRITICAL": "critical",
     "WARNING":  "low",
 }
 
-# Maximum time difference (seconds) for a time-window match
 _TIME_WINDOW_SECONDS = 60
-
-# Scoring weights
-_WEIGHT_TIME     = 0.4
-_WEIGHT_SEVERITY = 0.2
-_WEIGHT_KEYWORD  = 0.4
 
 
 class CorrelationService:
     """
-    Stateless service that correlates metric anomalies with
-    log anomalies and persists the results.
+    Service that correlates metric anomalies with predicted log anomalies.
     """
-
-    # ----------------------------------------------------------
-    # DATA RETRIEVAL
-    # ----------------------------------------------------------
 
     def get_recent_metric_anomalies(
         self,
@@ -99,9 +44,6 @@ class CorrelationService:
     ) -> List[Anomaly]:
         """
         Fetch metric anomalies from the last *minutes* minutes.
-
-        Returns rows from the ``anomalies`` table ordered by
-        timestamp descending.
         """
         cutoff = datetime.utcnow() - timedelta(minutes=minutes)
         try:
@@ -111,16 +53,9 @@ class CorrelationService:
                 .order_by(desc(Anomaly.timestamp))
                 .all()
             )
-            logger.info(
-                "[Correlation Engine] Metric anomalies found: %d (last %d min)",
-                len(anomalies), minutes,
-            )
             return anomalies
         except Exception as e:
-            logger.error(
-                "[Correlation Engine] Failed to fetch metric anomalies: %s",
-                e, exc_info=True,
-            )
+            logger.error("[Correlation Engine] Failed to fetch metric anomalies: %s", e, exc_info=True)
             return []
 
     def get_recent_log_anomalies(
@@ -129,138 +64,125 @@ class CorrelationService:
         minutes: int = 5,
     ) -> List[Log]:
         """
-        Fetch log-level anomalies from the last *minutes* minutes.
-
-        A "log anomaly" is defined as any log entry with level
-        ERROR or CRITICAL — these represent application-level
-        failures that may correlate with metric spikes.
+        Fetch predicted log anomalies from the last *minutes* minutes using LogAnomalyService.
         """
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
         try:
-            logs = (
-                db.query(Log)
-                .filter(
-                    Log.timestamp >= cutoff,
-                    Log.level.in_(["ERROR", "CRITICAL"]),
-                )
-                .order_by(desc(Log.timestamp))
-                .all()
-            )
-            logger.info(
-                "[Correlation Engine] Log anomalies found: %d (last %d min)",
-                len(logs), minutes,
-            )
-            return logs
+            log_service = get_log_anomaly_service()
+            return log_service.get_recent_log_anomalies(db, minutes)
         except Exception as e:
-            logger.error(
-                "[Correlation Engine] Failed to fetch log anomalies: %s",
-                e, exc_info=True,
-            )
+            logger.error("[Correlation Engine] Failed to fetch log anomalies: %s", e, exc_info=True)
             return []
 
-    # ----------------------------------------------------------
-    # SCORING
-    # ----------------------------------------------------------
-
-    def calculate_score(
+    def calculate_correlation_score(
         self,
         metric_anomaly: Anomaly,
         log_anomaly: Log,
-    ) -> float:
+        inferred_cause: str = "Unknown",
+    ) -> Dict[str, float]:
         """
-        Calculate a correlation score between a metric anomaly
-        and a log anomaly based on three factors.
+        Calculate correlation score based on Task 6 requirements:
+        - Time Match = 0.30 (if time_diff <= 60s)
+        - Severity Match = 0.20 (if severity matches mapped level)
+        - Host Match = 0.20 (if host_name matches)
+        - Service Match = 0.20 (if service context matches)
+        - Keyword Match = 0.10 (if inferred cause is not Unknown)
 
-        Parameters
-        ----------
-        metric_anomaly : Anomaly
-            A row from the anomalies table.
-        log_anomaly : Log
-            A row from the logs table (ERROR or CRITICAL).
-
-        Returns
-        -------
-        float
-            Score in [0.0, 1.0].
+        Returns:
+            {"correlation_score": float, "confidence": float}
         """
         score = 0.0
 
-        # ---- Factor 1: Time proximity (≤60 seconds) ----
-        time_diff = abs(
-            (metric_anomaly.timestamp - log_anomaly.timestamp).total_seconds()
-        )
+        # 1. Time Match (0.30)
+        time_diff = abs((metric_anomaly.timestamp - log_anomaly.timestamp).total_seconds())
         if time_diff <= _TIME_WINDOW_SECONDS:
-            score += _WEIGHT_TIME
+            score += 0.30
 
-        # ---- Factor 2: Severity match ----
-        mapped_severity = _LOG_LEVEL_TO_SEVERITY.get(
-            log_anomaly.level, ""
-        )
+        # 2. Severity Match (0.20)
+        mapped_severity = _LOG_LEVEL_TO_SEVERITY.get(log_anomaly.level, "")
         if (
             metric_anomaly.severity
             and mapped_severity
-            and metric_anomaly.severity.lower() == mapped_severity
+            and metric_anomaly.severity.lower() == mapped_severity.lower()
         ):
-            score += _WEIGHT_SEVERITY
+            score += 0.20
 
-        # ---- Factor 3: Keyword / cause match ----
-        cause_info = infer_root_cause(log_anomaly.message)
-        if cause_info["cause"] != "Unknown":
-            score += _WEIGHT_KEYWORD
+        # 3. Host Match (0.20)
+        log_host = getattr(log_anomaly, "host_name", None)
+        metric_host = getattr(metric_anomaly, "host_name", None)
+        if log_host == metric_host:
+            # Both None or matching hosts
+            score += 0.20
 
-        logger.debug(
-            "[Correlation Engine] Score calculated: %.2f "
-            "(time_diff=%.1fs, severity=%s vs %s, cause=%s)",
-            score, time_diff,
-            metric_anomaly.severity, log_anomaly.level,
-            cause_info["cause"],
-        )
+        # 4. Service Match (0.20)
+        log_service = getattr(log_anomaly, "service_name", None)
+        metric_service = getattr(metric_anomaly, "service_name", None)
+        if log_service and metric_service and log_service == metric_service:
+            score += 0.20
+        elif not log_service and not metric_service:
+            # Default fallback when service contexts are absent/identical
+            score += 0.20
+        elif log_service:
+            # Contextual service parsing (e.g. database-service matches database causes)
+            root_cause_str = (metric_anomaly.root_cause or "").lower()
+            if "database" in log_service.lower() and any(k in root_cause_str for k in ["database", "deadlock", "sql"]):
+                score += 0.20
+            elif "application" in log_service.lower() and any(k in root_cause_str for k in ["cpu", "memory", "jvm"]):
+                score += 0.20
 
-        return round(score, 2)
+        # 5. Keyword Match (0.10)
+        if inferred_cause != "Unknown":
+            score += 0.10
 
-    # ----------------------------------------------------------
-    # CAUSE INFERENCE
-    # ----------------------------------------------------------
+        score = round(score, 2)
+        confidence = round(score * 100, 2)
 
-    def infer_cause(self, log_message: str) -> Dict[str, Any]:
+        return {
+            "correlation_score": score,
+            "confidence": confidence,
+        }
+
+    def check_duplicate(self, db: Session, metric_id: int, log_id: int) -> bool:
         """
-        Delegate to the cause mapper to infer root cause from
-        a log message.
-
-        Returns
-        -------
-        dict
-            ``{"cause": "...", "confidence": float}``
+        Verify if a correlation record already exists.
         """
-        result = infer_root_cause(log_message)
-        if result["cause"] != "Unknown":
-            logger.info(
-                "[Correlation Engine] Cause inferred: %s (confidence=%.2f)",
-                result["cause"], result["confidence"],
+        try:
+            return (
+                db.query(Correlation)
+                .filter(
+                    Correlation.metric_anomaly_id == metric_id,
+                    Correlation.log_anomaly_id == log_id,
+                )
+                .first()
+                is not None
             )
-        return result
-
-    # ----------------------------------------------------------
-    # CORRELATION RECORD CREATION
-    # ----------------------------------------------------------
+        except Exception as e:
+            logger.error("[Correlation Engine] Error checking duplicate: %s", e)
+            return False
 
     def create_correlation(
         self,
         metric_anomaly: Anomaly,
         log_anomaly: Log,
-        score: float,
-        cause_info: Dict[str, Any],
+        score_info: Dict[str, float],
+        inferred_cause: str,
     ) -> Dict[str, Any]:
         """
-        Build a correlation data dictionary (not yet persisted).
+        Build correlation data dictionary.
         """
-        confidence = round(score * 100, 2)
+        # Phase 11 Preparation columns
+        service_name = getattr(log_anomaly, "service_name", None) or getattr(metric_anomaly, "service_name", None)
+        host_name = getattr(log_anomaly, "host_name", None) or getattr(metric_anomaly, "host_name", None)
+        container_id = getattr(log_anomaly, "container_id", None) or getattr(metric_anomaly, "container_id", None)
+
         return {
             "metric_anomaly_id": metric_anomaly.id,
             "log_anomaly_id":    log_anomaly.id,
-            "correlation_score": score,
-            "inferred_cause":    cause_info.get("cause", "Unknown"),
-            "confidence":        confidence,
+            "correlation_score": score_info["correlation_score"],
+            "inferred_cause":    inferred_cause,
+            "confidence":        score_info["confidence"],
+            "service_name":      service_name,
+            "host_name":         host_name,
+            "container_id":      container_id,
         }
 
     def store_correlation(
@@ -269,7 +191,7 @@ class CorrelationService:
         correlation_data: Dict[str, Any],
     ) -> Correlation:
         """
-        Persist a correlation record to the database.
+        Store correlation record.
         """
         try:
             db_corr = Correlation(
@@ -278,33 +200,18 @@ class CorrelationService:
                 correlation_score=correlation_data["correlation_score"],
                 inferred_cause=correlation_data["inferred_cause"],
                 confidence=correlation_data["confidence"],
+                service_name=correlation_data.get("service_name"),
+                host_name=correlation_data.get("host_name"),
+                container_id=correlation_data.get("container_id"),
             )
             db.add(db_corr)
             db.commit()
             db.refresh(db_corr)
-
-            logger.info(
-                "[Correlation Engine] Correlation stored "
-                "(ID=%d, metric=%d, log=%d, score=%.2f, cause='%s')",
-                db_corr.id,
-                db_corr.metric_anomaly_id,
-                db_corr.log_anomaly_id,
-                db_corr.correlation_score,
-                db_corr.inferred_cause,
-            )
             return db_corr
-
         except Exception as e:
             db.rollback()
-            logger.error(
-                "[Correlation Engine] Failed to store correlation: %s",
-                e, exc_info=True,
-            )
+            logger.error("[Correlation Engine] Failed to store correlation: %s", e, exc_info=True)
             raise
-
-    # ----------------------------------------------------------
-    # FULL PIPELINE
-    # ----------------------------------------------------------
 
     def run_correlation_engine(
         self,
@@ -312,103 +219,78 @@ class CorrelationService:
         minutes: int = 5,
     ) -> int:
         """
-        Execute the complete correlation pipeline:
-
-        1. Fetch recent metric anomalies
-        2. Fetch recent log anomalies (ERROR/CRITICAL)
-        3. For each (metric, log) pair within the time window:
-           - Calculate score
-           - Infer cause
-           - Store if score > 0
-        4. Return the number of correlations created
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy database session.
-        minutes : int
-            How far back to look for anomalies (default 5 min).
-
-        Returns
-        -------
-        int
-            Number of correlation records created.
+        Execute the complete correlation pipeline with structured observability logs.
         """
-        logger.info(
-            "[Correlation Engine] Starting correlation run (window=%d min)...",
-            minutes,
-        )
+        logger.info("[Correlation Engine] Correlation started")
 
         metric_anomalies = self.get_recent_metric_anomalies(db, minutes)
         log_anomalies = self.get_recent_log_anomalies(db, minutes)
 
         if not metric_anomalies:
-            logger.info("[Correlation Engine] No metric anomalies found — skipping.")
+            logger.info("[Correlation Engine] No metric anomalies found.")
+            logger.info("[Correlation Engine] Correlation completed")
             return 0
 
         if not log_anomalies:
-            logger.info("[Correlation Engine] No log anomalies found — skipping.")
+            logger.info("[Correlation Engine] No log anomalies found.")
+            logger.info("[Correlation Engine] Correlation completed")
             return 0
 
         correlations_created = 0
 
         for metric_anomaly in metric_anomalies:
+            logger.info("[Correlation Engine] Metric anomaly loaded")
+            
             for log_anomaly in log_anomalies:
+                logger.info("[Correlation Engine] Log anomaly loaded")
 
-                # Only correlate if within the time window
-                time_diff = abs(
-                    (metric_anomaly.timestamp - log_anomaly.timestamp).total_seconds()
-                )
+                # Time window filtering
+                time_diff = abs((metric_anomaly.timestamp - log_anomaly.timestamp).total_seconds())
                 if time_diff > _TIME_WINDOW_SECONDS:
                     continue
 
-                # Calculate score
-                score = self.calculate_score(metric_anomaly, log_anomaly)
+                # Infer cause
+                cause_info = infer_root_cause(log_anomaly.message)
+                inferred_cause = cause_info.get("cause", "Unknown")
+                logger.info("[Correlation Engine] Cause inferred")
 
-                # Only store meaningful correlations (score > 0)
-                if score <= 0:
+                # Calculate score
+                score_info = self.calculate_correlation_score(
+                    metric_anomaly, log_anomaly, inferred_cause
+                )
+                logger.info("[Correlation Engine] Score calculated")
+
+                # Reject score <= 0
+                if score_info["correlation_score"] <= 0:
                     continue
 
-                # Infer cause
-                cause_info = self.infer_cause(log_anomaly.message)
+                # Duplicate check
+                if self.check_duplicate(db, metric_anomaly.id, log_anomaly.id):
+                    logger.info("[Correlation Engine] Duplicate skipped")
+                    continue
 
-                # Build and store
+                # Build & store
                 corr_data = self.create_correlation(
-                    metric_anomaly, log_anomaly, score, cause_info,
+                    metric_anomaly, log_anomaly, score_info, inferred_cause
                 )
-
                 try:
                     self.store_correlation(db, corr_data)
+                    logger.info("[Correlation Engine] Correlation stored")
                     correlations_created += 1
                 except Exception:
-                    # Error already logged inside store_correlation
                     continue
 
-        logger.info(
-            "[Correlation Engine] Correlation run complete — %d correlations created.",
-            correlations_created,
-        )
+        logger.info("[Correlation Engine] Correlation completed")
         return correlations_created
-
-    # ----------------------------------------------------------
-    # QUERY METHODS
-    # ----------------------------------------------------------
 
     def get_all_correlations(self, db: Session) -> List[Correlation]:
         """
-        Return all stored correlations ordered by created_at descending.
+        Get all correlations.
         """
         try:
-            return (
-                db.query(Correlation)
-                .order_by(desc(Correlation.created_at))
-                .all()
-            )
+            return db.query(Correlation).order_by(desc(Correlation.created_at)).all()
         except Exception as e:
-            logger.error(
-                "[Correlation Engine] Failed to query correlations: %s",
-                e, exc_info=True,
-            )
+            logger.error("[Correlation Engine] Failed to query correlations: %s", e, exc_info=True)
             return []
 
     def get_latest_correlations(
@@ -417,7 +299,7 @@ class CorrelationService:
         limit: int = 20,
     ) -> List[Correlation]:
         """
-        Return the most recent *limit* correlations.
+        Get latest correlations.
         """
         try:
             return (
@@ -427,8 +309,15 @@ class CorrelationService:
                 .all()
             )
         except Exception as e:
-            logger.error(
-                "[Correlation Engine] Failed to query latest correlations: %s",
-                e, exc_info=True,
-            )
+            logger.error("[Correlation Engine] Failed to query latest correlations: %s", e, exc_info=True)
             return []
+
+
+# Singleton instance
+_service_instance: Optional[CorrelationService] = None
+
+def get_correlation_service() -> CorrelationService:
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = CorrelationService()
+    return _service_instance

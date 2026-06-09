@@ -9,6 +9,8 @@ from app.database import engine, Base, SessionLocal, get_db, verify_db_connectio
 from app.routers import metrics, anomalies, ml, logs
 from backend.routes.correlation_routes import router as correlation_router  # Phase 10
 from app.ml_service import get_ml_service
+from backend.jobs.correlation_scheduler import get_scheduler
+from backend.services.log_anomaly_service import get_log_anomaly_service
 
 # =========================================================
 # LOGGING CONFIGURATION
@@ -30,8 +32,8 @@ logger = logging.getLogger("metricguard")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    On startup: verify database connection, create tables, and load ML models.
-    On shutdown: dispose engine connections.
+    On startup: verify database connection, create tables, load ML models, and start background scheduler.
+    On shutdown: stop scheduler and dispose engine connections.
     """
     logger.info("MetricGuard backend starting up...")
     
@@ -59,9 +61,24 @@ async def lifespan(app: FastAPI):
         logger.info("ML models loaded successfully at startup.")
     else:
         logger.error("ML models failed to load at startup: %s", ml_service.model_load_error)
+
+    # Initialize and load Log Anomaly ML model
+    logger.info("Initializing log anomaly detection models...")
+    log_service = get_log_anomaly_service()
+    # LogAnomalyService loaded models inside get_log_anomaly_service() singleton initialization
+
+    # Start automated scheduler
+    logger.info("Starting background correlation scheduler...")
+    scheduler = get_scheduler()
+    scheduler.start()
         
     yield
     logger.info("MetricGuard backend shutting down...")
+    
+    # Stop background scheduler
+    logger.info("Stopping background correlation scheduler...")
+    get_scheduler().shutdown()
+    
     engine.dispose()
 
 
