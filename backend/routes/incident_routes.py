@@ -19,12 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from backend.schemas.incident import (
+from backend.schemas import (
     IncidentCreate,
     IncidentCreateResponse,
     IncidentListResponse,
     IncidentResponse,
     IncidentUpdate,
+    RecommendationResponse,
 )
 from backend.services.incident_service import get_incident_service
 
@@ -34,6 +35,7 @@ router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
 # Singleton service instance
 _service = get_incident_service()
+
 
 
 # ==========================================================
@@ -131,7 +133,44 @@ def get_incident_detail(incident_id: str, db: Session = Depends(get_db)):
 
 
 # ==========================================================
+# GET /incidents/{incident_id}/recommendations
+# ==========================================================
+
+@router.get("/{incident_id}/recommendations", response_model=RecommendationResponse)
+def get_incident_recommendations(incident_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve remediation recommendations for a specific incident.
+    """
+    incident = _service.get_incident(db, incident_id)
+    if incident is None:
+        logger.warning("[Incident API] Incident not found: %s", incident_id)
+        raise HTTPException(
+            status_code=404,
+            detail=f"Incident '{incident_id}' not found.",
+        )
+        
+    from backend.recommendation_engine import get_recommendation_service
+    rec_service = get_recommendation_service()
+    
+    # Impacted services stored as comma-separated string in DB
+    services_list = [s.strip() for s in incident.impacted_services.split(",") if s.strip()]
+    
+    recs = rec_service.get_recommendations(
+        root_cause=incident.root_cause,
+        severity=incident.severity,
+        impacted_services=services_list,
+        confidence=None
+    )
+    
+    return {
+        "root_cause": incident.root_cause,
+        "recommendations": recs
+    }
+
+
+# ==========================================================
 # PATCH /incidents/{incident_id}
+
 # ==========================================================
 
 @router.patch("/{incident_id}", response_model=IncidentResponse)

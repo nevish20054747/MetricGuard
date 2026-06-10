@@ -16,3 +16,10 @@ from backend.schemas.incident import (
     IncidentUpdate,
     IncidentListResponse,
 )
+
+from backend.schemas.recommendation import (
+    RecommendationRequest,
+    RecommendationItem,
+    RecommendationResponse,
+)
+

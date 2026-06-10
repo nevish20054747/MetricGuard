@@ -10,6 +10,7 @@ from app.routers import metrics, anomalies, ml, logs
 from backend.routes.correlation_routes import router as correlation_router  # Phase 10
 from backend.service_impact.routes import router as service_impact_router  # Phase 11
 from backend.routes.incident_routes import router as incident_router  # Phase 12
+from backend.recommendation_engine import recommendation_router  # Phase 13
 from app.ml_service import get_ml_service
 from backend.jobs.correlation_scheduler import get_scheduler
 from backend.services.log_anomaly_service import get_log_anomaly_service
@@ -70,6 +71,12 @@ async def lifespan(app: FastAPI):
         raise SystemExit("Database validation failed: 'incidents' table does not exist.")
     logger.info("Database table 'incidents' existence verified.")
     db.close()
+    
+    # Load Recommendation KB
+    logger.info("Loading Recommendation Engine Knowledge Base...")
+    from backend.recommendation_engine.knowledge_base import load_knowledge_base
+    load_knowledge_base()
+    logger.info("Recommendation Engine Knowledge Base loaded.")
     
     # Load ML models
     logger.info("Initializing ML models...")
@@ -151,6 +158,7 @@ app.include_router(logs.router)
 app.include_router(correlation_router)  # Phase 10: Metric-Log Correlation Engine
 app.include_router(service_impact_router)  # Phase 11: Service Impact Analysis & Dependency Graph
 app.include_router(incident_router)  # Phase 12: Alert Prioritization & Incident Management
+app.include_router(recommendation_router)  # Phase 13: Recommendation Engine
 
 
 # =========================================================
