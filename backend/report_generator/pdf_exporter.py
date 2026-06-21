@@ -363,33 +363,6 @@ def generate_pdf(report_data: Dict[str, Any]) -> Dict[str, Any]:
     else:
         story.append(Paragraph("No matching alerts correlated within the incident timeframe.", body_style))
 
-    # 8. Similar Historical Matches
-    story.append(Spacer(1, 14))
-    story.append(Paragraph("6. Historical Similar Incident Matches", section_title_style))
-    hist_matches = report_data.get("historical_matches", [])
-    if hist_matches:
-        hist_table_data = [
-            [Paragraph("Matching Incident ID", header_cell_style),
-             Paragraph("Similarity Score", header_cell_style)]
-        ]
-        for m in hist_matches:
-            score_pct = m.get("similarity_score", 0.0) * 100
-            hist_table_data.append([
-                Paragraph(m.get("incident_id", "N/A"), table_cell_bold),
-                Paragraph(f"<b>{score_pct:.0f}%</b>", table_cell_style),
-            ])
-        hist_table = Table(hist_table_data, colWidths=[252, 252])
-        hist_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e293b")),
-            ('PADDING', (0,0), (-1,-1), 6),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        story.append(hist_table)
-    else:
-        story.append(Paragraph("No matching historical incidents detected with similarity score >= 70%.", body_style))
-
     # Build Document using NumberedCanvas
     doc.build(story, canvasmaker=NumberedCanvas)
 

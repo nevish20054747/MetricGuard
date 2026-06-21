@@ -37,37 +37,6 @@ def db_session():
 
 
 def test_knowledge_service_archive_incident(db_session):
-    from app.models import Metric, Anomaly, Log
-    
-    # Create parent Metric
-    metric = Metric(
-        timestamp=datetime.utcnow(),
-        cpu_usage=50.0,
-        memory_usage=50.0
-    )
-    db_session.add(metric)
-    db_session.commit()
-    
-    # Create parent Anomaly
-    anomaly = Anomaly(
-        timestamp=datetime.utcnow(),
-        anomaly_score=0.85,
-        severity="WARNING",
-        detected_by="test-suite",
-        metric_id=metric.id
-    )
-    db_session.add(anomaly)
-    
-    # Create parent Log
-    log = Log(
-        timestamp=datetime.utcnow(),
-        level="ERROR",
-        service_name="namenode",
-        message="disk leak error message"
-    )
-    db_session.add(log)
-    db_session.commit()
-
     # 1. Seed Incident & Correlation
     incident_service = get_incident_service()
     incident = incident_service.create_incident(
@@ -77,8 +46,8 @@ def test_knowledge_service_archive_incident(db_session):
     )
     
     corr = Correlation(
-        metric_anomaly_id=anomaly.id,
-        log_anomaly_id=log.id,
+        metric_anomaly_id=10,
+        log_anomaly_id=20,
         correlation_score=0.90,
         inferred_cause="disk leak",
         confidence=90.0,

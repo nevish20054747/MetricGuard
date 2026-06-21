@@ -16,6 +16,9 @@ from backend.routes.log_anomaly_routes import router as log_anomaly_router  # Ph
 from app.ml_service import get_ml_service
 from backend.jobs.correlation_scheduler import get_scheduler
 from backend.services.log_anomaly_service import get_log_anomaly_service
+import backend.knowledge_base.models  # Phase 17 Models Registration
+from backend.knowledge_base.knowledge_routes import router as knowledge_router  # Phase 17
+
 
 # =========================================================
 # LOGGING CONFIGURATION
@@ -169,6 +172,11 @@ app.include_router(incident_router)  # Phase 12: Alert Prioritization & Incident
 app.include_router(recommendation_router)  # Phase 13: Recommendation Engine
 app.include_router(alert_router)  # Phase 14: Real-Time Alerting System
 app.include_router(log_anomaly_router)  # Phase 15: Log Anomaly API for Dashboard
+from backend.routes.report_routes import router as report_router  # Phase 16
+app.include_router(report_router)  # Phase 16: Automated Report Generation
+app.include_router(knowledge_router)  # Phase 17: Historical Incident Knowledge Base
+
+
 
 
 # =========================================================

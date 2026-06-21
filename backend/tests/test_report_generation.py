@@ -48,37 +48,6 @@ def test_report_generation_payload_and_files(db_session):
     Verify report generation aggregates correct data, saves metadata, 
     and writes CSV/PDF files to the filesystem.
     """
-    from app.models import Metric, Anomaly, Log
-
-    # Create parent Metric
-    metric = Metric(
-        timestamp=datetime.utcnow(),
-        cpu_usage=80.0,
-        memory_usage=70.0
-    )
-    db_session.add(metric)
-    db_session.commit()
-    
-    # Create parent Anomaly
-    anomaly = Anomaly(
-        timestamp=datetime.utcnow(),
-        anomaly_score=0.95,
-        severity="CRITICAL",
-        detected_by="test-suite",
-        metric_id=metric.id
-    )
-    db_session.add(anomaly)
-    
-    # Create parent Log
-    log = Log(
-        timestamp=datetime.utcnow(),
-        level="ERROR",
-        service_name="namenode",
-        message="Node failure error message"
-    )
-    db_session.add(log)
-    db_session.commit()
-
     # 1. Seed dependencies: Incident
     incident_service = get_incident_service()
     incident = incident_service.create_incident(
@@ -90,8 +59,8 @@ def test_report_generation_payload_and_files(db_session):
 
     # Seed correlation
     corr = Correlation(
-        metric_anomaly_id=anomaly.id,
-        log_anomaly_id=log.id,
+        metric_anomaly_id=1,
+        log_anomaly_id=1,
         correlation_score=0.95,
         inferred_cause="Node Failure",
         confidence=95.0,

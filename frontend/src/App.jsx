@@ -10,6 +10,7 @@ import ServiceImpactView from './components/ServiceImpactView';
 import IncidentTable from './components/IncidentTable';
 import RecommendationPanel from './components/RecommendationPanel';
 import LiveAlerts from './components/LiveAlerts';
+import ReportsPanel from './components/ReportsPanel';
 import api from './services/api';
 
 function App() {
@@ -117,6 +118,18 @@ function App() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             Incident Room
+          </button>
+
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`sidebar-link w-full text-left flex items-center gap-3 ${
+              activeTab === 'reports' ? 'active' : ''
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Automated Reports
           </button>
         </nav>
 
@@ -297,6 +310,19 @@ function App() {
                 </h3>
                 <RecommendationPanel />
               </div>
+            </div>
+          )}
+
+          {/* TAB 5: AUTOMATED REPORTS */}
+          {activeTab === 'reports' && (
+            <div className="space-y-4">
+              <h3 className="section-title">
+                <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                System Incident Reporting
+              </h3>
+              <ReportsPanel />
             </div>
           )}
         </div>

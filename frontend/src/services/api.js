@@ -59,4 +59,15 @@ export const fetchIncidentRecommendations = (incidentId) =>
 export const fetchAlerts = () =>
   api.get('/alerts').then(r => r.data);
 
+// ─── Reports ─────────────────────────────────────────────
+export const fetchReports = () =>
+  api.get('/reports/').then(r => r.data);
+
+export const generateReport = (incidentId, formats) =>
+  api.post('/reports/generate', { incident_id: incidentId, formats }).then(r => r.data);
+
+export const getReportDownloadUrl = (reportId, format) =>
+  `${API_BASE}/reports/download/${reportId}?format=${format}`;
+
 export default api;
+

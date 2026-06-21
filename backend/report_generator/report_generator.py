@@ -94,20 +94,6 @@ class ReportGenerator:
         storage = get_report_storage()
         report_id = storage.generate_report_id()
 
-        # 7.5. Search for similar historical incidents
-        historical_matches = []
-        try:
-            from backend.knowledge_base.knowledge_service import get_knowledge_service
-            kb_service = get_knowledge_service()
-            matches_data = kb_service.search_similar_incidents(
-                db=db,
-                title=incident.root_cause,
-                description=f"Incident caused by {incident.root_cause}."
-            )
-            historical_matches = matches_data
-        except Exception as sim_err:
-            logger.error("[REPORT_GENERATOR] Similarity lookup failed for report: %s", sim_err)
-
         # 8. Assemble unified data payload
         report_payload = {
             "report_id": report_id,
@@ -130,13 +116,6 @@ class ReportGenerator:
             "affected_services": affected_services_list,
             "recommendations": [r["action"] for r in recommendations],
             "recommendations_detail": recommendations,
-            "historical_matches": [
-                {
-                    "incident_id": m["incident_id"],
-                    "similarity_score": m["similarity_score"]
-                }
-                for m in historical_matches
-            ],
             "alerts": [
                 {
                     "alert_id": a.alert_id,

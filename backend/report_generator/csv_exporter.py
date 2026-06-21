@@ -46,17 +46,13 @@ def generate_csv(report_data: Dict[str, Any]) -> Dict[str, Any]:
     health_section = report_data.get("service_health", {})
     overall_status = health_section.get("overall_status", "N/A")
 
-    hist_matches_list = report_data.get("historical_matches", [])
-    historical_matches = "; ".join([f"{m['incident_id']}({m['similarity_score']*100:.0f}%)" for m in hist_matches_list])
-
     headers = [
         "incident_id",
         "severity",
         "root_cause",
         "affected_services",
         "recommendations",
-        "overall_status",
-        "historical_matches"
+        "overall_status"
     ]
 
     row = {
@@ -65,8 +61,7 @@ def generate_csv(report_data: Dict[str, Any]) -> Dict[str, Any]:
         "root_cause": root_cause,
         "affected_services": affected_services,
         "recommendations": recommendations,
-        "overall_status": overall_status,
-        "historical_matches": historical_matches
+        "overall_status": overall_status
     }
 
     try:

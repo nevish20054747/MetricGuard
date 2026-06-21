@@ -425,23 +425,7 @@ class IncidentService:
             current_status,
             new_status,
         )
-
-        # Phase 17: Automatic Archiving on RESOLVED status
-        if new_status == "RESOLVED":
-            try:
-                from backend.knowledge_base.knowledge_service import get_knowledge_service
-                knowledge_service = get_knowledge_service()
-                knowledge_service.archive_incident(db, incident_id)
-            except Exception as archive_err:
-                logger.error(
-                    "[Incident Service] Automatic archiving failed for incident %s: %s",
-                    incident_id,
-                    archive_err,
-                    exc_info=True,
-                )
-
         return incident
-
 
 
 # =========================================================
