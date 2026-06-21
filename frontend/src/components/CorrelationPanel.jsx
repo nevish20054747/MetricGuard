@@ -124,6 +124,23 @@ export default function CorrelationPanel() {
                   </p>
                 </div>
 
+                {/* Inferred Root Cause */}
+                <div className="mb-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Inferred Root Cause</p>
+                      <p className="text-xs text-indigo-300 font-bold leading-relaxed truncate" title={c.inferred_cause}>
+                        {c.inferred_cause || 'Unknown'}
+                      </p>
+                    </div>
+                    {c.service_name && (
+                      <span className="badge badge-info shrink-0 text-[8px] uppercase tracking-wider px-2 py-0.5 mt-4">
+                        {c.service_name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Log anomaly */}
                 <div className="mb-4">
                   <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Correlated Log Template</p>
